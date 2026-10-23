@@ -13,7 +13,7 @@ def check(c, msg):
 try:
     with sync_playwright() as p:
         b = p.chromium.launch()
-        pg = b.new_page(viewport={'width': 1360, 'height': 860}, device_scale_factor=2)
+        pg = b.new_page(viewport={'width': 1440, 'height': 960}, device_scale_factor=2)
         pg.goto('http://127.0.0.1:4174/')
         settings = {'provider': 'custom', 'baseUrl': 'http://127.0.0.1:8787/v1', 'model': 'mock-model', 'apiKeys': {'custom': 'sk-test'}, 'stream': True}
         pg.evaluate(f"localStorage.setItem('pc.settings.v1', JSON.stringify({json.dumps(settings)}))")

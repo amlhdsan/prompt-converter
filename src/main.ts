@@ -31,6 +31,7 @@ const icons = {
   clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   gh: '<svg viewBox="0 0 24 24" class="fill"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.2-3.1-.1-.4-.5-1.6.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.3 2.8.1 3.2.8.8 1.2 1.9 1.2 3.1 0 4.7-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>',
   copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  mark: '<svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
 };
 const modeIcon: Record<Mode, string> = { general: '🧭', coding: '💻', writing: '✍️', analysis: '🔬', image: '🎨' };
@@ -40,27 +41,36 @@ function render() {
   const d = t();
   const prov = PROVIDERS.find((p) => p.id === s.provider) ?? PROVIDERS[3];
   $('#app').innerHTML = `
-  <header class="top">
-    <div class="brand"><span class="logo">✨</span><div><h1>${d.title}</h1><p>${d.subtitle}</p></div></div>
-    <div class="actions">
-      <button class="icon" id="btn-history" title="${d.history}">${icons.clock}</button>
-      <button class="icon" id="btn-theme" title="${d.theme[s.theme]}">${s.theme === 'dark' ? icons.moon : s.theme === 'light' ? icons.sun : icons.auto}</button>
-      <button class="pill" id="btn-lang">${s.uiLang === 'zh' ? 'EN' : '中'}</button>
-      <button class="icon" id="btn-settings" title="${d.settings}">${icons.gear}</button>
-      <a class="icon" href="https://github.com/amlhdsan/prompt-converter" target="_blank" rel="noopener" title="GitHub">${icons.gh}</a>
+  <!-- Frosted, sticky app bar: compact brand mark + utility actions -->
+  <header class="appbar">
+    <div class="appbar-inner">
+      <div class="brand"><span class="logo" aria-hidden="true">${icons.mark}</span><span class="brand-name">${d.title}</span></div>
+      <nav class="actions" aria-label="toolbar">
+        <button class="icon" id="btn-history" title="${d.history}" aria-label="${d.history}">${icons.clock}</button>
+        <button class="icon" id="btn-theme" title="${d.theme[s.theme]}" aria-label="${d.theme[s.theme]}">${s.theme === 'dark' ? icons.moon : s.theme === 'light' ? icons.sun : icons.auto}</button>
+        <button class="pill" id="btn-lang" aria-label="Language">${s.uiLang === 'zh' ? 'EN' : '中文'}</button>
+        <button class="icon" id="btn-settings" title="${d.settings}" aria-label="${d.settings}">${icons.gear}</button>
+        <a class="icon" href="https://github.com/amlhdsan/prompt-converter" target="_blank" rel="noopener" title="GitHub" aria-label="GitHub">${icons.gh}</a>
+      </nav>
     </div>
   </header>
+
+  <!-- Hero: large headline establishes hierarchy -->
+  <section class="hero">
+    <h1>${d.title}</h1>
+    <p>${d.subtitle}</p>
+  </section>
 
   <main>
     <section class="toolbar">
       <div class="seg" role="tablist" aria-label="${d.mode}">
-        ${MODES.map((m) => `<button role="tab" data-mode="${m}" class="${s.mode === m ? 'on' : ''}">${modeIcon[m]} ${d.modes[m]}</button>`).join('')}
+        ${MODES.map((m) => `<button role="tab" data-mode="${m}" aria-selected="${s.mode === m}" class="${s.mode === m ? 'on' : ''}">${d.modes[m]}</button>`).join('')}
       </div>
       <label class="sel">${d.outLang}
         <select id="out-lang">${(['auto', 'zh', 'en'] as OutLang[]).map((l) => `<option value="${l}" ${s.outLang === l ? 'selected' : ''}>${d.langs[l]}</option>`).join('')}</select>
       </label>
     </section>
-    ${!s.apiKeys[s.provider] ? `<div class="banner">🔑 ${d.err.noKey} · <button class="link" id="open-set2">${d.settings}</button> · <span class="muted">${esc(prov.name)}</span></div>` : ''}
+    ${!s.apiKeys[s.provider] ? `<div class="banner">${d.err.noKey} · <button class="link" id="open-set2">${d.settings}</button> · <span class="muted">${esc(prov.name)}</span></div>` : ''}
 
     <section class="grid">
       <div class="card">
@@ -70,7 +80,7 @@ function render() {
           <span class="muted small">${d.shortcut}</span>
           <div class="row">
             <button class="ghost" id="btn-clear">${d.clear}</button>
-            <button class="primary" id="btn-convert">${busy ? `<span class="spin"></span>${d.stop}` : d.convert}</button>
+            <button class="primary" id="btn-convert">${busy ? `<span class="spin"></span>${d.stop}` : d.convert.replace('✨ ', '')}</button>
           </div>
         </div>
       </div>
@@ -102,7 +112,7 @@ function renderOutput(): string {
   const d = t();
   const out = output
     ? `<pre class="out" id="output">${esc(output)}${busy ? '<span class="caret"></span>' : ''}</pre>`
-    : `<div class="placeholder">${busy ? `<span class="spin"></span> ${d.converting}` : `<div class="ph-icon">🪄</div>${d.empty}`}</div>`;
+    : `<div class="placeholder">${busy ? `<span class="spin"></span> ${d.converting}` : `<div class="ph-icon">${icons.mark}</div><div>${d.empty}</div><div class="small">${d.shortcut}</div>`}</div>`;
   if (view === 'diff') {
     return `<div class="diff"><div><div class="tag">${d.original}</div><pre class="out dim">${esc(input) || '—'}</pre></div><div><div class="tag accent">${d.converted}</div>${out}</div></div>`;
   }

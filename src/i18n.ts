@@ -2,7 +2,7 @@ export type Lang = 'zh' | 'en';
 const zh = {
   title: '提示词转换器', subtitle: '把随手写的想法，变成结构清晰、效果更好的提示词',
   settings: '设置', provider: '服务商', baseUrl: 'Base URL', model: '模型', apiKey: 'API Key', getKey: '获取 Key',
-  stream: '流式输出', privacy: '🔒 你的 API Key 只保存在本浏览器的 localStorage 中，请求从浏览器直接发往你配置的接口，不经过任何第三方服务器。',
+  stream: '流式输出', privacy: '你的 API Key 只保存在本浏览器的 localStorage 中，请求从浏览器直接发往你配置的接口，不经过任何第三方服务器。',
   mode: '场景', outLang: '输出语言', original: '原始提示词', converted: '转换结果',
   placeholder: '在这里粘贴或输入你的原始提示词，例如：\n帮我写个python脚本批量重命名图片', convert: '✨ 转换', stop: '停止', converting: '转换中…',
   copy: '复制', copied: '已复制 ✓', clear: '清空', history: '历史记录', clearHistory: '清空历史', noHistory: '暂无历史记录',
@@ -22,7 +22,7 @@ const zh = {
 const en: typeof zh = {
   title: 'Prompt Converter', subtitle: 'Turn rough ideas into clear, structured, high-performing prompts',
   settings: 'Settings', provider: 'Provider', baseUrl: 'Base URL', model: 'Model', apiKey: 'API Key', getKey: 'Get key',
-  stream: 'Streaming', privacy: '🔒 Your API key is stored only in this browser\'s localStorage. Requests go directly from your browser to the endpoint you configure — no third-party server.',
+  stream: 'Streaming', privacy: 'Your API key is stored only in this browser\'s localStorage. Requests go directly from your browser to the endpoint you configure — no third-party server.',
   mode: 'Mode', outLang: 'Output language', original: 'Original prompt', converted: 'Converted prompt',
   placeholder: 'Paste or type your rough prompt here, e.g.\nwrite a python script to bulk rename images', convert: '✨ Convert', stop: 'Stop', converting: 'Converting…',
   copy: 'Copy', copied: 'Copied ✓', clear: 'Clear', history: 'History', clearHistory: 'Clear history', noHistory: 'No history yet',
