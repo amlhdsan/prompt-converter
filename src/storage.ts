@@ -4,12 +4,14 @@ const K = { settings: 'pc.settings.v1', history: 'pc.history.v1' };
 export interface Settings {
   provider: string; baseUrl: string; model: string; apiKeys: Record<string, string>;
   mode: string; outLang: string; uiLang: 'zh' | 'en'; theme: 'light' | 'dark' | 'system'; stream: boolean;
+  autoUpdate: boolean; dismissedUpdate: string;
 }
 export interface HistoryItem { id: string; at: number; mode: string; input: string; output: string; model: string }
 
 export const DEFAULT_SETTINGS: Settings = {
   provider: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKeys: {},
   mode: 'general', outLang: 'auto', uiLang: 'zh', theme: 'system', stream: true,
+  autoUpdate: true, dismissedUpdate: '',
 };
 
 function read<T>(k: string, d: T): T {

@@ -6,7 +6,7 @@
 
 纯前端 · 本地运行 · 自带 API Key · 支持任意 OpenAI 兼容接口
 
-[English](#english) · [快速开始](#-快速开始本地部署) · [隐私说明](#-隐私说明) · [路线图](#️-路线图)
+[English](#english) · [快速开始](#-快速开始本地部署) · [更新](#-更新--updating) · [隐私说明](#-隐私说明) · [路线图](#️-路线图)
 
 ![screenshot](docs/screenshot.png)
 
@@ -37,6 +37,32 @@ docker compose up -d                 # http://localhost:3000
 ```
 
 打开页面 → 点击右上角 ⚙️ 设置 → 选择服务商并填入 API Key → 粘贴提示词 → 点击「✨ 转换」（或 `Ctrl/⌘ + Enter`）。
+
+## 🔄 更新 / Updating
+
+应用启动时会（每 24 小时最多一次）检查 GitHub 上是否有新版本，有更新时在页面顶部提示；也可在 ⚙️ 设置中手动「检查更新」或关闭自动检查。离线时静默跳过。
+
+The app checks GitHub for a newer release at most once per 24h (falls back to the latest commit on `main` if there are no releases) and shows a notice. You can check manually or disable it in Settings.
+
+**一键更新（推荐，跨平台）/ One command:**
+
+```bash
+npm run update          # git pull + npm install + npm run build，并打印结果
+```
+
+**手动更新（git clone 用户）/ Manual:**
+
+```bash
+git pull && npm install && npm run build
+```
+
+**Docker：**
+
+```bash
+git pull && docker compose up -d --build
+```
+
+更新内容见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 🌟 功能
 

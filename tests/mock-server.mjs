@@ -6,6 +6,11 @@ http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+  // Mock GitHub API for the update checker
+  if (req.method === 'GET' && req.url.startsWith('/repos/amlhdsan/prompt-converter/releases/latest')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ tag_name: 'v9.9.0', html_url: 'https://github.com/amlhdsan/prompt-converter/releases/tag/v9.9.0' }));
+  }
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {

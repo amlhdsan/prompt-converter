@@ -2,6 +2,7 @@ import './style.css';
 import { chat, LLMError, PROVIDERS } from './llm';
 import { buildMessages, MODES, type Mode, type OutLang } from './prompts';
 import { DICT, type Dict } from './i18n';
+import { APP_VERSION, REPO_URL, checkForUpdate, type UpdateInfo } from './update';
 import { addHistory, clearHistory, loadHistory, loadSettings, saveSettings, type Settings } from './storage';
 
 const s: Settings = loadSettings();
@@ -11,6 +12,7 @@ let busy = false;
 let view: 'single' | 'diff' = 'single';
 let ctrl: AbortController | null = null;
 let error = '';
+let update: UpdateInfo | null = null; // latest known update info
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const t = (): Dict => DICT[s.uiLang];
 const esc = (x: string) => x.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -32,6 +34,7 @@ const icons = {
   gh: '<svg viewBox="0 0 24 24" class="fill"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.2-3.1-.1-.4-.5-1.6.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.3 2.8.1 3.2.8.8 1.2 1.9 1.2 3.1 0 4.7-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>',
   copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   mark: '<svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>',
+  arrow: '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
 };
 const modeIcon: Record<Mode, string> = { general: '🧭', coding: '💻', writing: '✍️', analysis: '🔬', image: '🎨' };
@@ -62,6 +65,7 @@ function render() {
   </section>
 
   <main>
+    ${renderUpdateNotice()}
     <section class="toolbar">
       <div class="seg" role="tablist" aria-label="${d.mode}">
         ${MODES.map((m) => `<button role="tab" data-mode="${m}" aria-selected="${s.mode === m}" class="${s.mode === m ? 'on' : ''}">${d.modes[m]}</button>`).join('')}
@@ -102,10 +106,28 @@ function render() {
     ${error ? `<div class="error" role="alert">⚠️ ${esc(error)}</div>` : ''}
     <p class="privacy">${d.privacy}</p>
   </main>
-  <footer>MIT © amlhdsan · <a href="https://github.com/amlhdsan/prompt-converter" target="_blank" rel="noopener">GitHub</a> · ${s.uiLang === 'zh' ? '觉得有用？点个 ⭐ 吧' : 'Find it useful? Leave a ⭐'}</footer>
+  <footer>v${APP_VERSION} · MIT © amlhdsan · <a href="https://github.com/amlhdsan/prompt-converter" target="_blank" rel="noopener">GitHub</a> · ${s.uiLang === 'zh' ? '觉得有用？点个 ⭐ 吧' : 'Find it useful? Leave a ⭐'}</footer>
   <div id="modal-root"></div>
   <div id="toast"></div>`;
   bind();
+}
+
+/** Apple-style update notice (dismissible per version). */
+function renderUpdateNotice(): string {
+  if (!update?.available || s.dismissedUpdate === update.latest) return '';
+  const d = t();
+  const title = update.kind === 'release' ? `${d.updateTitle}: v${esc(update.latest)}` : `${d.updateCommit} (${esc(update.latest)})`;
+  return `<aside class="notice" id="update-notice" role="status">
+    <div class="notice-icon" aria-hidden="true">${icons.arrow}</div>
+    <div class="notice-body">
+      <div class="notice-title">${title} <span class="muted small">· ${d.current} v${APP_VERSION}</span></div>
+      <div class="notice-text">${esc(d.updateHow)}</div>
+    </div>
+    <div class="notice-actions">
+      <a class="primary soft" href="${update.url}" target="_blank" rel="noopener">${d.changelog}</a>
+      <button class="ghost" id="update-dismiss">${d.later}</button>
+    </div>
+  </aside>`;
 }
 
 function renderOutput(): string {
@@ -192,6 +214,11 @@ function openSettings() {
       <label><span class="row between">${d.apiKey}${prov().keyUrl ? `<a href="${prov().keyUrl}" target="_blank" rel="noopener" class="small">${d.getKey} ↗</a>` : ''}</span>
         <div class="pw"><input id="f-key" type="password" value="${esc(s.apiKeys[s.provider] || '')}" placeholder="sk-..." autocomplete="off" spellcheck="false"/><button class="ghost small" id="f-eye">👁</button></div></label>
       <label class="check"><input type="checkbox" id="f-stream" ${s.stream ? 'checked' : ''}/> ${d.stream}</label>
+      <div class="divider"></div>
+      <div class="row between"><span class="label">${d.version} <strong>v${APP_VERSION}</strong> <a class="small" href="${REPO_URL}/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG ↗</a></span>
+        <button class="ghost" id="f-check">${d.checkUpdate}</button></div>
+      <div class="small muted" id="f-check-status" aria-live="polite"></div>
+      <label class="check"><input type="checkbox" id="f-auto" ${s.autoUpdate ? 'checked' : ''}/> ${d.autoUpdate}</label>
       <p class="privacy small">${d.privacy}</p>
       <div class="row end"><button class="primary" data-close>${d.save}</button></div>
     </div>`, (root) => {
@@ -205,6 +232,15 @@ function openSettings() {
     q('f-model').addEventListener('input', (e) => { s.model = (e.target as HTMLInputElement).value; persist(); });
     q('f-key').addEventListener('input', (e) => { s.apiKeys[s.provider] = (e.target as HTMLInputElement).value.trim(); persist(); });
     q('f-stream').addEventListener('change', (e) => { s.stream = (e.target as HTMLInputElement).checked; persist(); });
+    q('f-auto').addEventListener('change', (e) => { s.autoUpdate = (e.target as HTMLInputElement).checked; persist(); });
+    q('f-check').addEventListener('click', async () => {
+      const st = root.querySelector('#f-check-status')!; st.textContent = d.checking;
+      try {
+        update = await checkForUpdate(true);
+        if (update?.available) { s.dismissedUpdate = ''; persist(); }
+        st.textContent = update?.available ? (update.kind === 'release' ? `${d.updateTitle}: v${update.latest}` : `${d.updateCommit} (${update.latest})`) : d.upToDate;
+      } catch { st.textContent = d.checkFailed; }
+    });
     q('f-eye').addEventListener('click', () => { const k = q('f-key'); k.type = k.type === 'password' ? 'text' : 'password'; });
   });
 }
@@ -236,6 +272,7 @@ function bind() {
   $('#btn-clear').addEventListener('click', () => { input = ''; output = ''; error = ''; render(); $('#input').focus(); });
   $('#btn-copy').addEventListener('click', () => output && copyText(output));
   $('#btn-reuse').addEventListener('click', () => { input = output; output = ''; render(); });
+  $('#update-dismiss')?.addEventListener('click', () => { if (update) { s.dismissedUpdate = update.latest; persist(); render(); } });
   $('#btn-settings').addEventListener('click', openSettings);
   $('#open-set2')?.addEventListener('click', openSettings);
   $('#btn-history').addEventListener('click', openHistory);
@@ -247,3 +284,5 @@ function bind() {
 }
 
 render();
+// Background update check (throttled, silent on failure).
+if (s.autoUpdate) checkForUpdate().then((u) => { if (u) { update = u; if (u.available) render(); } });
