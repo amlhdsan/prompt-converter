@@ -1,0 +1,19 @@
+{
+  "name": "prompt-converter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "提示词转换器 - turn rough prompts into structured, effective prompts with your own LLM API key",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test:e2e": "npm run build && python3 tests/e2e.py",
+    "mock": "node tests/mock-server.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0"
+  }
+}

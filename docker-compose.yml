@@ -1,0 +1,8 @@
+services:
+  prompt-converter:
+    build: .
+    image: prompt-converter:latest
+    container_name: prompt-converter
+    ports:
+      - "3000:80"
+    restart: unless-stopped
