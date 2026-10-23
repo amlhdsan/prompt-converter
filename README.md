@@ -8,7 +8,9 @@
 
 [English](#english) · [快速开始](#-快速开始本地部署) · [更新](#-更新--updating) · [隐私说明](#-隐私说明) · [路线图](#️-路线图)
 
-![screenshot](docs/screenshot.png)
+![demo](docs/demo.gif)
+
+<sub>演示使用模拟接口录制 · Demo recorded against a mock API</sub>
 
 </div>
 
@@ -37,6 +39,12 @@ docker compose up -d                 # http://localhost:3000
 ```
 
 打开页面 → 点击右上角 ⚙️ 设置 → 选择服务商并填入 API Key → 粘贴提示词 → 点击「✨ 转换」（或 `Ctrl/⌘ + Enter`）。
+
+## 📸 截图 / Screenshots
+
+| 浅色 Light | 深色 Dark |
+| --- | --- |
+| ![light](docs/screenshot.png) | ![dark](docs/screenshot-dark.png) |
 
 ## 🔄 更新 / Updating
 

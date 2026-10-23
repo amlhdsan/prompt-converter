@@ -24,7 +24,7 @@ http.createServer((req, res) => {
       const parts = REPLY.match(/[\s\S]{1,6}/g);
       let i = 0;
       const tick = () => {
-        if (i < parts.length) { res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: parts[i++] } }] })}\n\n`); setTimeout(tick, 15); }
+        if (i < parts.length) { res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: parts[i++] } }] })}\n\n`); setTimeout(tick, Number(process.env.MOCK_DELAY || 15)); }
         else { res.write('data: [DONE]\n\n'); res.end(); }
       };
       tick();
