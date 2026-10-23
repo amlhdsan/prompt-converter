@@ -95,7 +95,7 @@ git pull && docker compose up -d --build
 
 ## 🧱 技术栈与结构
 
-Vite + 原生 TypeScript，零运行时依赖，构建产物约 30KB。
+Vite + 原生 TypeScript，零运行时依赖，构建产物约 40KB（未压缩）。
 
 ```
 src/
