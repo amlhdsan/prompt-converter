@@ -85,7 +85,7 @@ tests/
 - [ ] 自定义 / 导入导出场景模板
 - [ ] 多版本对比、迭代追问优化
 - [ ] 浏览器扩展
-- [ ] 可选在线演示（GitHub Pages，见 `.github/workflows/deploy.yml`，手动触发，使用 `BASE_PATH=/prompt-converter/`）
+- [ ] 可选在线演示（GitHub Pages，工作流模板在 `docs/github-pages-deploy.yml`，启用时移到 `.github/workflows/`，使用 `BASE_PATH=/prompt-converter/`）
 
 ## 🤝 贡献
 
