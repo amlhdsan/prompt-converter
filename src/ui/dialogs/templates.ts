@@ -1,12 +1,14 @@
 import { deleteTemplate, loadTemplates, upsertTemplate, type Template } from '../../storage';
 import { esc, modal, toast, uid } from '../dom';
 import { persist, rerender, st, t } from '../state';
+import { openModeHints } from './tools';
 
 export function openTemplates(editId?: string) {
   const d = t();
   const list = loadTemplates();
   const cur: Template = list.find((x) => x.id === editId) ?? { id: '', name: '', icon: '⭐', prompt: '', at: 0 };
   modal(d.templates, `
+    <div class="row between"><span class="small muted">${d.modeHintHelp}</span><button class="ghost small" id="tpl-builtin">${d.builtinModes}</button></div>
     <div class="tpl-list" role="list">${list.length ? list.map((x) => `
       <div class="tpl-item${x.id === editId ? ' editing' : ''}" data-id="${esc(x.id)}" role="listitem">
         <span class="tpl-icon" aria-hidden="true">${esc(x.icon || '⭐')}</span>
@@ -36,6 +38,7 @@ export function openTemplates(editId?: string) {
       if (!cur.id) st.s.mode = 'tpl:' + tpl.id; persist();
       rerender(); openTemplates(); toast(d.tplSaved);
     });
+    root.querySelector('#tpl-builtin')!.addEventListener('click', () => openModeHints());
     root.querySelector('#tpl-cancel')?.addEventListener('click', () => openTemplates());
     root.querySelectorAll<HTMLElement>('[data-tpl-edit]').forEach((b) => b.addEventListener('click', () => openTemplates(b.dataset.tplEdit)));
     root.querySelectorAll<HTMLButtonElement>('[data-tpl-del]').forEach((b) => b.addEventListener('click', () => {

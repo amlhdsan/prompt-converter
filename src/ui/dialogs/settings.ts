@@ -1,11 +1,13 @@
-import { listModels } from '../../llm';
+import { chat, listModels, LLMError } from '../../llm';
+import { getErrors } from '../../lib/errlog';
+import { openErrorLog } from './tools';
 import { PROVIDERS, providerById, needsKey } from '../../providers';
-import { exportData, importData, loadSettings, DEFAULT_HOTKEY, type Profile } from '../../storage';
+import { exportData, importData, ImportError, loadSettings, DEFAULT_HOTKEY, type Profile } from '../../storage';
 import { APP_VERSION, REPO_URL, checkForUpdate } from '../../update';
 import { eventToAccelerator, getAutostart, isDesktop, prettyAccel, setAutostart, setHotkey } from '../../platform';
 import { download, esc, fmt, modal, toast, uid } from '../dom';
-import { errorMessage } from '../actions';
-import { persist, rerender, st, t } from '../state';
+import { errorMessage, reqBase } from '../actions';
+import { lang2, persist, rerender, st, t } from '../state';
 
 async function saveBackup(json: string) {
   const name = `prompt-converter-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -24,7 +26,7 @@ export function openSettings() {
   const d = t();
   const s = st.s;
   const prov = providerById(s.provider);
-  const lang = s.uiLang;
+  const lang = lang2();
   const key = s.apiKeys[s.provider] || '';
   modal(d.settings, `
     <div class="form">
@@ -45,12 +47,15 @@ export function openSettings() {
       ${needsKey(prov) || prov.id === 'custom' ? `<label><span class="row between">${d.apiKey}${prov.keyUrl ? `<a href="${prov.keyUrl}" target="_blank" rel="noopener" class="small">${d.getKey} ↗</a>` : ''}</span>
         <div class="pw"><input id="f-key" type="password" value="${esc(key)}" placeholder="sk-..." autocomplete="off" spellcheck="false"/><button class="ghost small" id="f-eye" type="button" aria-label="show / hide" aria-pressed="false">👁</button></div></label>`
         : `<div class="small muted" id="f-nokey">✓ ${d.noKeyNeeded}</div>`}
-      <label class="check"><input type="checkbox" id="f-stream" ${s.stream ? 'checked' : ''}/> ${d.stream}</label>
+      <div class="row between wrap"><label class="check"><input type="checkbox" id="f-stream" ${s.stream ? 'checked' : ''}/> ${d.stream}</label>
+        <button class="ghost small" id="f-conn" type="button">${d.connTest}</button></div>
+      <div class="small muted" id="f-conn-status" aria-live="polite"></div>
       <div class="divider"></div>
       <div class="label">${d.advanced}</div>
       <div class="row wrap gap">
         <label class="inline">${d.variants}<select id="f-variants">${[1, 2, 3].map((n) => `<option ${s.variants === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <label class="inline">${d.timeout}<input id="f-timeout" type="number" min="5" max="600" step="5" value="${s.timeoutSec}"/></label>
+        <label class="inline">${d.retries}<select id="f-retries">${[0, 1, 2, 3].map((n) => `<option ${s.retries === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       </div>
       <label class="check"><input type="checkbox" id="f-score" ${s.showScore ? 'checked' : ''}/> ${d.showScore}</label>
       <label class="check"><input type="checkbox" id="f-session" ${s.sessionKeys ? 'checked' : ''}/> ${d.sessionKeys}</label>
@@ -71,6 +76,8 @@ export function openSettings() {
       </div>
       <label class="check"><input type="checkbox" id="f-export-keys"/> ${d.includeKeys}</label>
       <div class="small muted" id="f-data-status" aria-live="polite"></div>
+      <div class="row between wrap"><label class="check"><input type="checkbox" id="f-errlog" ${s.errorLog ? 'checked' : ''}/> ${d.errorLog}</label>
+        <button class="ghost small" id="f-viewlog" type="button">${d.viewLog} (${getErrors().length})</button></div>
       <div class="divider"></div>
       <div class="row between"><span class="label">${d.version} <strong>v${APP_VERSION}</strong> <a class="small" href="${REPO_URL}/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG ↗</a></span>
         <button class="ghost" id="f-check" type="button">${d.checkUpdate}</button></div>
@@ -95,6 +102,22 @@ export function openSettings() {
     q('f-auto').addEventListener('change', (e) => { s.autoUpdate = (e.target as HTMLInputElement).checked; persist(); });
     q<HTMLSelectElement>('f-variants').addEventListener('change', (e) => { s.variants = Number((e.target as HTMLSelectElement).value); persist(); });
     q('f-timeout').addEventListener('change', (e) => { s.timeoutSec = Math.min(600, Math.max(5, Number((e.target as HTMLInputElement).value) || 60)); persist(); });
+    q<HTMLSelectElement>('f-retries').addEventListener('change', (e) => { s.retries = Number((e.target as HTMLSelectElement).value); persist(); });
+    q('f-errlog').addEventListener('change', (e) => { s.errorLog = (e.target as HTMLInputElement).checked; persist(); });
+    q('f-viewlog').addEventListener('click', () => openErrorLog());
+    q('f-conn').addEventListener('click', async () => {
+      const stEl = q('f-conn-status'); const btn = q<HTMLButtonElement>('f-conn');
+      stEl.textContent = d.connTesting; btn.disabled = true;
+      const t0 = performance.now();
+      try {
+        await chat({ ...reqBase(), stream: false, retries: 0, maxTokens: 8, timeoutMs: 20_000, messages: [{ role: 'user', content: 'ping' }] });
+        stEl.textContent = '✓ ' + fmt(d.connOk, { ms: Math.round(performance.now() - t0), model: s.model });
+      } catch (e) {
+        // An empty reply still proves the endpoint, key and model work.
+        if (e instanceof LLMError && e.kind === 'empty') stEl.textContent = '✓ ' + fmt(d.connOk, { ms: Math.round(performance.now() - t0), model: s.model });
+        else stEl.textContent = '✕ ' + errorMessage(e);
+      } finally { btn.disabled = false; }
+    });
     q('f-score').addEventListener('change', (e) => { s.showScore = (e.target as HTMLInputElement).checked; persist(); });
     q('f-session').addEventListener('change', (e) => { s.sessionKeys = (e.target as HTMLInputElement).checked; persist(); });
     // Model list
@@ -144,11 +167,13 @@ export function openSettings() {
       const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
       try {
         if (f.size > 20 * 1024 * 1024) throw new Error('too large');
-        const r = importData(JSON.parse(await f.text()));
+        let raw: unknown; try { raw = JSON.parse(await f.text()); } catch { throw new ImportError('invalid'); }
+        const r = importData(raw);
         const ui = st.s.uiLang; st.s = loadSettings(); if (!r.settings) st.s.uiLang = ui;
         const msg = fmt(t().imported, { s: r.settings ? t().yes : t().no, t: r.templates, h: r.history });
         rerender(); openSettings(); toast(msg); (document.querySelector('#f-data-status') as HTMLElement).textContent = msg;
-      } catch { ds.textContent = d.importFailed; toast(d.importFailed); }
+      } catch (err) { const m = err instanceof ImportError && err.message === 'newer' ? d.importNewer : d.importFailed; ds.textContent = m; toast(m); }
+      (e.target as HTMLInputElement).value = '';
     });
     if (isDesktop) bindDesktop(root);
   });

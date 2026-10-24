@@ -1,4 +1,4 @@
-export type Lang = 'zh' | 'en';
+export type Lang = 'zh' | 'en' | 'ja';
 const zh = {
   title: '提示词转换器', subtitle: '把随手写的想法，变成结构清晰、效果更好的提示词',
   settings: '设置', provider: '服务商', baseUrl: 'Base URL', model: '模型', apiKey: 'API Key', getKey: '获取 Key',
@@ -21,7 +21,7 @@ const zh = {
   data: '数据', exportData: '导出 JSON', importData: '导入 JSON', includeKeys: '导出时包含 API Key（请妥善保管文件）',
   exported: '已导出', imported: '导入成功：设置 {s}，模板 {t} 个，历史 {h} 条', importFailed: '导入失败：文件不是有效的提示词转换器备份',
   yes: '是', no: '否', customLang: '自定义语言，如：粤语、Italiano', shortcuts: '键盘快捷键',
-  keys: { convert: '转换 / 停止', copy: '复制结果', settings: '打开设置', history: '打开历史记录', templates: '管理模板', mode: '切换第 N 个场景', help: '显示快捷键帮助', esc: '关闭弹窗 / 停止转换', global: '呼出 / 隐藏快速转换窗口（桌面版，全局）' },
+  keys: { palette: '命令面板', batch: '批量转换', convert: '转换 / 停止', copy: '复制结果', settings: '打开设置', history: '打开历史记录', templates: '管理模板', mode: '切换第 N 个场景', help: '显示快捷键帮助', esc: '关闭弹窗 / 停止转换', global: '呼出 / 隐藏快速转换窗口（桌面版，全局）' },
   desktop: '桌面版', hotkey: '全局快捷键', hotkeyHint: '点击输入框后按下新的组合键', hotkeySaved: '快捷键已更新', hotkeyFailed: '快捷键注册失败（可能被占用）', reset: '恢复默认',
   autostart: '开机自启动', quickAutoCopy: '快速转换完成后自动复制结果到剪贴板',
   quickTitle: '快速转换', pasteClip: '粘贴剪贴板', openMain: '主窗口', quickHint: 'Enter 换行 · {m}+Enter 转换 · Esc 隐藏',
@@ -42,6 +42,19 @@ const zh = {
   timeout: '请求超时（秒）', sessionKeys: '仅在本次会话保存 API Key（关闭标签页后清除）', showScore: '显示提示词质量评分',
   autoPaste: '转换完成后自动粘贴回原来的应用（macOS 需授予辅助功能权限）',
   pwaReady: '已可离线使用', retry: '重试', advanced: '高级',
+
+  connTest: '测试连接', connTesting: '测试中…', connOk: '连接成功 · {ms} ms · {model}',
+  builtinModes: '内置场景指令', modeHintHelp: '可修改内置场景发给模型的改写指令；清空或点「恢复默认」即还原。', resetDefault: '恢复默认', customized: '已自定义', hintSaved: '场景指令已保存',
+  batch: '批量转换', batchHint: '每行一条提示词；如果提示词有多行，用单独一行 --- 分隔。按当前场景与设置依次转换（并发 2）。', batchRun: '开始转换', batchDone: '完成 {ok}/{n}', batchCopyAll: '复制全部', batchExport: '导出 Markdown', batchCount: '共 {n} 条', batchEmpty: '请输入至少一条提示词',
+  exportHistoryMd: '导出 Markdown',
+  fillPlaceholders: '填写占位（{n}）', fillTitle: '填写占位内容', fillHint: '填写后会替换结果中对应的 [请补充 / TODO] 占位，留空则保留原样。', fillApply: '应用',
+  palette: '命令面板', paletteHint: '输入命令、场景或操作…', noCommands: '没有匹配的命令', cmdTheme: '切换主题', cmdLang: '切换界面语言', cmdClear: '清空输入与结果', cmdMode: '切换场景：{m}',
+  crashTitle: '出了点问题', crashText: '界面遇到意外错误。你的设置、模板和历史仍安全保存在本地。', crashReload: '重新加载', crashReset: '重置界面状态', copyLog: '复制错误日志', logCopied: '错误日志已复制',
+  errorLog: '记录本地错误日志（仅保存在本机，便于反馈问题）', viewLog: '查看错误日志', logEmpty: '没有错误记录', clearLog: '清空日志',
+  storageDegraded: '浏览器存储不可用或已满：部分修改可能不会被保存。建议在设置中导出备份。', storageRecovered: '检测到损坏的本地数据，已自动恢复为默认值（原数据已备份）。',
+  retrying: '网络波动，正在重试（{n}/{m}）…', stalled: '输出中途停止响应，已保留已收到的部分结果。', retries: '失败自动重试次数',
+  hotkeyStartupFailed: '全局快捷键 {k} 注册失败（可能被其他应用占用），请在设置中更换。', importNewer: '导入失败：备份来自更新的版本，请先升级应用',
+  skipInput: '跳到输入框', starUs: '觉得有用？点个 ⭐ 吧', nextLang: 'EN',
   modes: { general: '通用', coding: '编程', writing: '写作', analysis: '分析 / 研究', image: '图像生成' },
   langs: { auto: '跟随原文', zh: '简体中文', 'zh-TW': '繁體中文', en: 'English', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español', ru: 'Русский', custom: '自定义…' } as Record<string, string>,
   theme: { light: '浅色', dark: '深色', system: '跟随系统' },
@@ -76,7 +89,7 @@ const en: typeof zh = {
   data: 'Data', exportData: 'Export JSON', importData: 'Import JSON', includeKeys: 'Include API keys in export (keep the file safe)',
   exported: 'Exported', imported: 'Imported: settings {s}, {t} templates, {h} history entries', importFailed: 'Import failed: not a valid Prompt Converter backup',
   yes: 'yes', no: 'no', customLang: 'Custom language, e.g. Cantonese, Italiano', shortcuts: 'Keyboard shortcuts',
-  keys: { convert: 'Convert / stop', copy: 'Copy result', settings: 'Open settings', history: 'Open history', templates: 'Manage templates', mode: 'Switch to mode N', help: 'Show this help', esc: 'Close dialog / stop', global: 'Show / hide quick-convert window (desktop, global)' },
+  keys: { palette: 'Command palette', batch: 'Batch convert', convert: 'Convert / stop', copy: 'Copy result', settings: 'Open settings', history: 'Open history', templates: 'Manage templates', mode: 'Switch to mode N', help: 'Show this help', esc: 'Close dialog / stop', global: 'Show / hide quick-convert window (desktop, global)' },
   desktop: 'Desktop', hotkey: 'Global hotkey', hotkeyHint: 'Click the field and press a new key combination', hotkeySaved: 'Hotkey updated', hotkeyFailed: 'Could not register hotkey (maybe in use)', reset: 'Reset',
   autostart: 'Launch at login', quickAutoCopy: 'Copy the result to the clipboard after a quick conversion',
   quickTitle: 'Quick convert', pasteClip: 'Paste clipboard', openMain: 'Main window', quickHint: 'Enter newline · {m}+Enter convert · Esc hide',
@@ -97,6 +110,19 @@ const en: typeof zh = {
   timeout: 'Request timeout (seconds)', sessionKeys: 'Keep API keys for this session only (cleared when the tab closes)', showScore: 'Show prompt quality score',
   autoPaste: 'After converting, paste back into the previous app automatically (macOS needs Accessibility permission)',
   pwaReady: 'Ready to work offline', retry: 'Retry', advanced: 'Advanced',
+
+  connTest: 'Test connection', connTesting: 'Testing…', connOk: 'Connected · {ms} ms · {model}',
+  builtinModes: 'Built-in mode instructions', modeHintHelp: 'Edit the rewrite instructions the built-in modes send to the model. Clear it or press Reset to restore.', resetDefault: 'Reset', customized: 'customized', hintSaved: 'Mode instructions saved',
+  batch: 'Batch convert', batchHint: 'One prompt per line; separate multi-line prompts with a line containing ---. Converted with the current mode and settings (2 at a time).', batchRun: 'Convert all', batchDone: 'Done {ok}/{n}', batchCopyAll: 'Copy all', batchExport: 'Export Markdown', batchCount: '{n} prompts', batchEmpty: 'Enter at least one prompt',
+  exportHistoryMd: 'Export Markdown',
+  fillPlaceholders: 'Fill placeholders ({n})', fillTitle: 'Fill in placeholders', fillHint: 'Your answers replace the matching [TODO] placeholders in the result; leave blank to keep them.', fillApply: 'Apply',
+  palette: 'Command palette', paletteHint: 'Type a command, mode or action…', noCommands: 'No matching commands', cmdTheme: 'Toggle theme', cmdLang: 'Switch UI language', cmdClear: 'Clear input and result', cmdMode: 'Switch mode: {m}',
+  crashTitle: 'Something went wrong', crashText: 'The interface hit an unexpected error. Your settings, templates and history are still safely stored on this device.', crashReload: 'Reload', crashReset: 'Reset UI state', copyLog: 'Copy error log', logCopied: 'Error log copied',
+  errorLog: 'Keep a local error log (stays on this device, handy for bug reports)', viewLog: 'View error log', logEmpty: 'No errors recorded', clearLog: 'Clear log',
+  storageDegraded: 'Browser storage is unavailable or full: some changes may not be saved. Consider exporting a backup in Settings.', storageRecovered: 'Corrupted local data was detected and reset to defaults (the original was backed up).',
+  retrying: 'Network hiccup, retrying ({n}/{m})…', stalled: 'The stream stopped responding midway; the partial result was kept.', retries: 'Automatic retries on failure',
+  hotkeyStartupFailed: 'Global hotkey {k} could not be registered (maybe used by another app). Pick another one in Settings.', importNewer: 'Import failed: the backup comes from a newer version, please update first',
+  skipInput: 'Skip to input', starUs: 'Find it useful? Leave a ⭐', nextLang: '日本語',
   modes: { general: 'General', coding: 'Coding', writing: 'Writing', analysis: 'Analysis / Research', image: 'Image generation' },
   langs: { auto: 'Same as input', zh: '简体中文', 'zh-TW': '繁體中文', en: 'English', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español', ru: 'Русский', custom: 'Custom…' },
   theme: { light: 'Light', dark: 'Dark', system: 'System' },
@@ -109,5 +135,6 @@ const en: typeof zh = {
     rate: 'Rate limited or out of quota (429): retry later, or check your balance / rate limits.', server: 'Server error (5xx): the provider is temporarily unavailable, retry later.', timeout: 'Timed out: no data received for too long. Increase the timeout in Settings or check the network / endpoint.', retryIn: 'retry in {s}s',
   },
 };
-export const DICT = { zh, en };
+import { ja } from './i18n.ja';
+export const DICT: Record<'zh' | 'en' | 'ja', typeof zh> = { zh, en, ja };
 export type Dict = typeof zh;

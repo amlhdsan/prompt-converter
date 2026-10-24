@@ -3,6 +3,7 @@ import { closeModal, esc, modal } from '../dom';
 import { allModes, modeLabel } from '../actions';
 import { icons } from '../icons';
 import { persist, st, t } from '../state';
+import { exportHistoryMd } from './tools';
 
 let tab: 'all' | 'fav' = 'all';
 let query = '';
@@ -34,7 +35,8 @@ export function openHistory() {
           </button>
         </div>`;
       }).join('') : `<div class="placeholder">${all.length ? d.noMatch : d.noHistory}</div>`;
-      root.querySelector('#h-foot')!.innerHTML = all.length ? `<button class="ghost danger" id="h-clear">${d.clearHistory}</button>` : '';
+      root.querySelector('#h-foot')!.innerHTML = all.length ? `<button class="ghost" id="h-export">${icons.download} ${d.exportHistoryMd}</button><button class="ghost danger" id="h-clear">${d.clearHistory}</button>` : '';
+      root.querySelector('#h-export')?.addEventListener('click', exportHistoryMd);
       root.querySelector('#h-clear')?.addEventListener('click', () => { clearHistory(); draw(); });
       for (const [id, v] of [['h-tab-all', 'all'], ['h-tab-fav', 'fav']] as const) {
         const b = root.querySelector('#' + id)!; b.className = tab === v ? 'on' : ''; b.setAttribute('aria-selected', String(tab === v));

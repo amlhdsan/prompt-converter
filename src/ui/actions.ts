@@ -12,7 +12,7 @@ export interface ModeOpt { id: string; label: string; icon: string; hint: string
 export function allModes(): ModeOpt[] {
   const d = t();
   return [
-    ...MODES.map((m) => ({ id: m, label: d.modes[m], icon: modeIcon[m], hint: MODE_HINTS[m], custom: false })),
+    ...MODES.map((m) => ({ id: m, label: d.modes[m], icon: modeIcon[m], hint: st.s.modeHints[m]?.trim() || MODE_HINTS[m], custom: false })),
     ...loadTemplates().map((x) => ({ id: 'tpl:' + x.id, label: x.name, icon: x.icon || '⭐', hint: x.prompt, custom: true })),
   ];
 }
@@ -36,7 +36,7 @@ export function errorMessage(e: unknown): string {
 /** Common request options from current settings. */
 export function reqBase() {
   const p = providerById(st.s.provider);
-  return { baseUrl: st.s.baseUrl, model: st.s.model, apiKey: st.s.apiKeys[st.s.provider] || '', kind: p.kind, stream: st.s.stream, timeoutMs: Math.max(5, st.s.timeoutSec || 60) * 1000 };
+  return { baseUrl: st.s.baseUrl, model: st.s.model, apiKey: st.s.apiKeys[st.s.provider] || '', kind: p.kind, stream: st.s.stream, timeoutMs: Math.max(5, st.s.timeoutSec || 60) * 1000, retries: st.s.retries };
 }
 /** Returns false (and guides the user) when a key is required but missing. */
 export function ensureKey(openSettings: () => void): boolean {
@@ -46,7 +46,7 @@ export function ensureKey(openSettings: () => void): boolean {
   if (isQuick) { if (isDesktop) showMain(); } else openSettings();
   return false;
 }
-const strip = (x: string) => x.replace(/^```[a-z]*\n([\s\S]*?)\n```\s*$/i, '$1').trim();
+export const strip = (x: string) => x.replace(/^```[a-z]*\n([\s\S]*?)\n```\s*$/i, '$1').trim();
 
 async function run(build: (i: number) => ChatMessage[], n: number, saveInput: string) {
   st.busy = true; st.error = ''; st.outputs = Array(n).fill(''); st.active = 0; st.ctrl = new AbortController(); rerender();
@@ -54,13 +54,19 @@ async function run(build: (i: number) => ChatMessage[], n: number, saveInput: st
   const signal = st.ctrl.signal;
   const results = await Promise.allSettled(Array.from({ length: n }, (_, i) => chat({
     ...base, signal, messages: build(i), temperature: n > 1 ? 0.4 + i * 0.3 : 0.4,
+    onRetry: (a, m) => { st.notice = fmt(t().retrying, { n: a, m }); noticeHook(); },
     onDelta: (txt) => { st.outputs[i] = txt; if (i === st.active) updateOutputLive(); else updateVariantTabs(); },
   })));
   let ok = 0;
+  st.notice = '';
   results.forEach((r, i) => {
-    if (r.status === 'fulfilled') { st.outputs[i] = strip(r.value); ok++; }
-    else if (!(r.reason instanceof LLMError && r.reason.kind === 'aborted') && !st.error) st.error = errorMessage(r.reason);
+    if (r.status === 'fulfilled') { st.outputs[i] = strip(r.value); ok++; return; }
+    const e = r.reason;
+    // Keep whatever arrived before a stall / abort so the user doesn't lose it.
+    if (e instanceof LLMError && e.partial) { st.outputs[i] = e.partial; if (e.kind === 'timeout') st.notice = t().stalled; }
+    if (!(e instanceof LLMError && e.kind === 'aborted') && !(e instanceof LLMError && e.partial && e.kind === 'timeout') && !st.error) st.error = errorMessage(e);
   });
+  if (!ok && st.outputs.some(Boolean)) st.active = Math.max(0, st.outputs.findIndex(Boolean));
   const firstOk = results.findIndex((r) => r.status === 'fulfilled');
   if (firstOk >= 0) st.active = firstOk;
   if (ok) {
@@ -102,6 +108,8 @@ export async function refine(instruction: string, openSettings: () => void) {
 // Live streaming updates without a full re-render (keeps focus/scroll).
 let liveHook: () => void = () => {};
 let tabsHook: () => void = () => {};
+let noticeHook: () => void = () => {};
+export const setNoticeHook = (fn: () => void) => { noticeHook = fn; };
 export const setLiveHooks = (live: () => void, tabs: () => void) => { liveHook = live; tabsHook = tabs; };
 const updateOutputLive = () => liveHook();
 const updateVariantTabs = () => tabsHook();

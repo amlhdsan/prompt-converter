@@ -3,11 +3,11 @@ import { OUT_LANGS } from './prompts';
 import { providerById, needsKey } from './providers';
 import { APP_VERSION, REPO_URL, checkForUpdate } from './update';
 import { decodeShare, encodeShare, shareFromHash } from './lib/share';
-import { hideQuick, isDesktop, isQuick, modKey, onEvent, openExternal } from './platform';
+import { hideQuick, hotkeyStatus, isDesktop, isQuick, modKey, onEvent, openExternal } from './platform';
 import { $, copyText, download, esc, fmt, modalOpen, toast } from './ui/dom';
 import { icons } from './ui/icons';
-import { onRender, out, persist, reloadSettings, rerender, st, t, type View } from './ui/state';
-import { allModes, convert, refine, setLiveHooks, setMode } from './ui/actions';
+import { onRender, out, persist, reloadSettings, st, t, type View } from './ui/state';
+import { allModes, convert, refine, setLiveHooks, setMode, setNoticeHook } from './ui/actions';
 import { renderOutput, renderQuality, renderVariantTabs, statsText } from './ui/output';
 import { openSettings } from './ui/dialogs/settings';
 import { openHistory } from './ui/dialogs/history';
@@ -15,13 +15,18 @@ import { openTemplates } from './ui/dialogs/templates';
 import { openLibrary, openShortcuts, openTestRun } from './ui/dialogs/extra';
 import { pasteClipboard, renderQuick } from './ui/quick';
 import { estimateTokens } from './lib/tokens';
+import { findPlaceholders } from './lib/placeholders';
+import { logError } from './lib/errlog';
+import { abortAll } from './llm';
+import { checkIntegrity, health, onExternalChange, UI_LANGS } from './storage';
+import { exportHistoryMd, openBatch, openFill, openModeHints, openPalette, renderCrash, type Command } from './ui/dialogs/tools';
 
 const mq = matchMedia('(prefers-color-scheme: dark)');
 function applyTheme() {
   const s = st.s;
   const dark = s.theme === 'dark' || (s.theme === 'system' && mq.matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  document.documentElement.lang = s.uiLang === 'zh' ? 'zh-CN' : 'en';
+  document.documentElement.lang = s.uiLang === 'zh' ? 'zh-CN' : s.uiLang;
   document.documentElement.classList.toggle('quick', isQuick);
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#000000' : '#f5f5f7');
 }
@@ -36,7 +41,29 @@ const REFINE_CHIPS: Record<string, string> = {
   formal: 'Make the tone more formal and professional.',
 };
 
+// ---- Global error boundary ----
+function crash(e: unknown, ctx: string) {
+  if (st.s.errorLog) logError(e, ctx);
+  console.error(e);
+  // Only replace the UI for errors during render; async errors elsewhere just surface as a toast.
+  if (ctx === 'render') { st.crashed = { msg: String((e as Error)?.message ?? e) }; try { renderCrash(st.crashed.msg); } catch { /* last resort */ } }
+  else { try { toast(`⚠️ ${String((e as Error)?.message ?? e).slice(0, 140)}`); } catch { /* ignore */ } }
+}
+window.addEventListener('error', (e) => { if (e.error || e.message) crash(e.error ?? e.message, 'window'); });
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason as { kind?: string; name?: string } | undefined;
+  if (r?.kind === 'aborted' || r?.name === 'AbortError') return;
+  crash(e.reason, 'promise');
+});
+// Abort in-flight requests when the page goes away (navigation, reload, window close).
+window.addEventListener('pagehide', () => abortAll());
+
 function render() {
+  try { renderApp(); } catch (e) { crash(e, 'render'); }
+}
+const nextLang = () => UI_LANGS[(UI_LANGS.indexOf(st.s.uiLang) + 1) % UI_LANGS.length];
+
+function renderApp() {
   applyTheme();
   if (isQuick) return renderQuick();
   const d = t();
@@ -45,17 +72,20 @@ function render() {
   const modes = allModes();
   const o = out();
   const focusId = document.activeElement?.id;
+  const ph = o ? findPlaceholders(o).length : 0;
   $('#app').innerHTML = `
-  <a class="skip" href="#input">${s.uiLang === 'zh' ? '跳到输入框' : 'Skip to input'}</a>
+  <a class="skip" href="#input">${d.skipInput}</a>
   <header class="appbar">
     <div class="appbar-inner">
       <div class="brand"><span class="logo" aria-hidden="true">${icons.mark}</span><span class="brand-name">${d.title}</span></div>
       <nav class="actions" aria-label="toolbar">
         <button class="icon" id="btn-library" title="${d.library}" aria-label="${d.library}">${icons.book}</button>
+        <button class="icon hide-sm" id="btn-palette" title="${d.palette} (${modKey}+K)" aria-label="${d.palette}">${icons.search}</button>
+        <button class="icon hide-sm" id="btn-batch" title="${d.batch} (${modKey}+Shift+B)" aria-label="${d.batch}">${icons.layers}</button>
         <button class="icon hide-sm" id="btn-keys" title="${d.shortcuts} (?)" aria-label="${d.shortcuts}">${icons.kbd}</button>
         <button class="icon" id="btn-history" title="${d.history}" aria-label="${d.history}">${icons.clock}</button>
         <button class="icon" id="btn-theme" title="${d.theme[s.theme]}" aria-label="${d.theme[s.theme]}">${s.theme === 'dark' ? icons.moon : s.theme === 'light' ? icons.sun : icons.auto}</button>
-        <button class="pill" id="btn-lang" aria-label="Language / 语言">${s.uiLang === 'zh' ? 'EN' : '中文'}</button>
+        <button class="pill" id="btn-lang" aria-label="Language / 语言 / 言語">${d.nextLang}</button>
         <button class="icon" id="btn-settings" title="${d.settings}" aria-label="${d.settings}">${icons.gear}</button>
         <a class="icon hide-sm" href="${REPO_URL}" target="_blank" rel="noopener" title="GitHub" aria-label="GitHub">${icons.gh}</a>
       </nav>
@@ -69,6 +99,9 @@ function render() {
 
   <main>
     ${renderUpdateNotice()}
+    ${health.degraded ? `<div class="banner warn" id="storage-banner" role="alert">${d.storageDegraded}</div>` : ''}
+    ${health.recovered.length && !recoveredSeen ? `<div class="banner info" id="recovered-banner">${d.storageRecovered} · <button class="link" id="recovered-dismiss">${d.dismiss}</button></div>` : ''}
+    ${hotkeyIssue ? `<div class="banner warn" id="hotkey-banner">${esc(fmt(d.hotkeyStartupFailed, { k: hotkeyIssue }))} · <button class="link" id="hotkey-fix">${d.settings}</button></div>` : ''}
     ${st.shared ? `<div class="banner info" id="shared-banner">🔗 ${d.sharedBanner} · <button class="link" id="shared-dismiss">${d.dismiss}</button></div>` : ''}
     <section class="toolbar">
       <div class="seg scroll" role="tablist" aria-label="${d.mode}">
@@ -114,6 +147,7 @@ function render() {
           <span class="muted small" id="out-count">${statsText()}</span>
           <div class="row">
             <button class="ghost hide-sm" id="btn-reuse" ${o && !st.busy ? '' : 'disabled'}>${d.useAsInput}</button>
+            ${ph && !st.busy ? `<button class="ghost" id="btn-fill" title="${esc(d.fillTitle)}">${esc(fmt(d.fillPlaceholders, { n: ph }))}</button>` : ''}
             <button class="ghost" id="btn-test" ${o && !st.busy ? '' : 'disabled'} title="${d.testRunHint}">${icons.play}<span>${d.testRun}</span></button>
             <div class="menu">
               <button class="icon" id="btn-more" aria-haspopup="menu" aria-expanded="false" aria-label="${d.more}" ${o && !st.busy ? '' : 'disabled'}>${icons.more}</button>
@@ -128,11 +162,12 @@ function render() {
         </div>
       </div>
     </section>
+    <div class="notice-line small muted" id="notice-line" aria-live="polite">${esc(st.notice)}</div>
     ${st.error ? `<div class="error" role="alert">⚠️ ${esc(st.error)}</div>` : ''}
     ${renderQuality()}
     <p class="privacy">${d.privacy}</p>
   </main>
-  <footer>v${APP_VERSION}${isDesktop ? ` · ${d.desktop}` : ''} · MIT © amlhdsan · <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub</a> · ${s.uiLang === 'zh' ? '觉得有用？点个 ⭐ 吧' : 'Find it useful? Leave a ⭐'}</footer>
+  <footer>v${APP_VERSION}${isDesktop ? ` · ${d.desktop}` : ''} · MIT © amlhdsan · <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub</a> · ${d.starUs}</footer>
   <div id="modal-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>`;
   bind();
@@ -169,6 +204,9 @@ function bindVariantTabs() {
   document.querySelectorAll<HTMLButtonElement>('[data-variant]').forEach((b) => b.addEventListener('click', () => { st.active = Number(b.dataset.variant); if (st.busy) updateLive(); else render(); }));
 }
 setLiveHooks(updateLive, updateTabs);
+setNoticeHook(() => { const n = $('#notice-line'); if (n) n.textContent = st.notice; });
+let recoveredSeen = false;
+let hotkeyIssue = '';
 
 const slug = () => (st.input.trim().slice(0, 24).replace(/[\\/:*?"<>|\s]+/g, '-') || 'prompt');
 function exportMd() {
@@ -201,7 +239,12 @@ function bind() {
   $('#btn-library').addEventListener('click', () => openLibrary(focusInput));
   $('#btn-examples')?.addEventListener('click', () => openLibrary(focusInput));
   $('#btn-templates').addEventListener('click', () => openTemplates());
-  $('#btn-lang').addEventListener('click', () => { st.s.uiLang = st.s.uiLang === 'zh' ? 'en' : 'zh'; persist(); render(); });
+  $('#btn-lang').addEventListener('click', () => { st.s.uiLang = nextLang(); persist(); render(); });
+  $('#btn-palette').addEventListener('click', palette);
+  $('#btn-batch').addEventListener('click', openBatch);
+  $('#btn-fill')?.addEventListener('click', openFill);
+  $('#recovered-dismiss')?.addEventListener('click', () => { recoveredSeen = true; render(); });
+  $('#hotkey-fix')?.addEventListener('click', () => { hotkeyIssue = ''; openSettings(); });
   $('#btn-theme').addEventListener('click', () => { const s = st.s; s.theme = s.theme === 'system' ? 'light' : s.theme === 'light' ? 'dark' : 'system'; persist(); render(); });
   document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode!)));
   document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => b.addEventListener('click', () => { st.view = b.dataset.view as View; render(); }));
@@ -230,6 +273,32 @@ function bind() {
 document.addEventListener('click', (e) => { const pop = document.getElementById('more-menu'); if (pop && !pop.hidden && !(e.target as HTMLElement).closest('.menu')) { pop.hidden = true; $('#btn-more')?.setAttribute('aria-expanded', 'false'); } });
 const focusInput = () => { const ta = $<HTMLTextAreaElement>('#input'); ta?.focus(); ta?.setSelectionRange(ta.value.length, ta.value.length); };
 
+function palette() {
+  const d = t();
+  const cmds: Command[] = [
+    { id: 'convert', label: d.convert.replace('✨ ', ''), hint: `${modKey}+Enter`, run: doConvert },
+    { id: 'batch', label: d.batch, hint: `${modKey}+Shift+B`, run: openBatch },
+    { id: 'copy', label: d.copy, hint: `${modKey}+Shift+C`, run: () => out() && copyText(out()) },
+    { id: 'test', label: d.testRun, hint: `${modKey}+Shift+R`, run: () => out() && openTestRun() },
+    { id: 'fill', label: fmt(d.fillPlaceholders, { n: findPlaceholders(out()).length }), run: openFill },
+    { id: 'settings', label: d.settings, hint: `${modKey}+,`, run: openSettings },
+    { id: 'history', label: d.history, hint: `${modKey}+Shift+H`, run: openHistory },
+    { id: 'history-md', label: `${d.history} · ${d.exportHistoryMd}`, run: exportHistoryMd },
+    { id: 'templates', label: d.templates, hint: `${modKey}+Shift+T`, run: () => openTemplates() },
+    { id: 'modehints', label: d.builtinModes, run: () => openModeHints() },
+    { id: 'library', label: d.library, hint: `${modKey}+Shift+E`, run: () => openLibrary(focusInput) },
+    { id: 'export-md', label: d.exportMd, run: () => out() && exportMd() },
+    { id: 'share', label: d.share, run: () => out() && share() },
+    { id: 'theme', label: d.cmdTheme, run: () => { const s = st.s; s.theme = s.theme === 'system' ? 'light' : s.theme === 'light' ? 'dark' : 'system'; persist(); render(); } },
+    { id: 'lang', label: `${d.cmdLang} → ${d.nextLang}`, run: () => { st.s.uiLang = nextLang(); persist(); render(); } },
+    { id: 'clear', label: d.cmdClear, run: () => { st.input = ''; st.outputs = []; st.error = ''; render(); } },
+    { id: 'shortcuts', label: d.shortcuts, hint: '?', run: openShortcuts },
+    ...allModes().map((m) => ({ id: 'mode:' + m.id, label: fmt(d.cmdMode, { m: m.label }), run: () => setMode(m.id) })),
+  ];
+  // Only offer output-dependent commands when there is output.
+  openPalette(cmds.filter((c) => out() || !['copy', 'test', 'fill', 'export-md', 'share'].includes(c.id)).filter((c) => c.id !== 'fill' || findPlaceholders(out()).length));
+}
+
 // ---- Keyboard ----
 const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 document.addEventListener('keydown', (e) => {
@@ -252,7 +321,10 @@ document.addEventListener('keydown', (e) => {
     if (isQuick) hideQuick();
     return;
   }
-  if (isQuick || inModal) return;
+  if (isQuick) return;
+  if (mod && !e.shiftKey && e.code === 'KeyK') { e.preventDefault(); if (inModal) document.querySelector<HTMLElement>('#modal-root .modal-h [data-close]')?.click(); else palette(); return; }
+  if (inModal) return;
+  if (mod && e.shiftKey && e.code === 'KeyB') { e.preventDefault(); openBatch(); return; }
   if (mod && e.shiftKey && e.code === 'KeyC') { if (out()) { e.preventDefault(); copyText(out()); } return; }
   if (mod && e.shiftKey && e.code === 'KeyR') { if (out() && !st.busy) { e.preventDefault(); openTestRun(); } return; }
   if (mod && e.key === ',') { e.preventDefault(); openSettings(); return; }
@@ -276,8 +348,7 @@ if (isDesktop) {
 }
 
 // Cross-window / cross-tab sync.
-window.addEventListener('storage', (e) => {
-  if (!e.key?.startsWith('pc.')) return;
+onExternalChange(() => {
   reloadSettings();
   if (!st.busy && !modalOpen()) render();
 });
@@ -286,6 +357,7 @@ if (isQuick) onEvent('quick-shown', () => { if (st.busy) return; reloadSettings(
 onRender(render);
 
 async function boot() {
+  checkIntegrity();
   const sh = shareFromHash();
   if (sh) {
     const p = await decodeShare(sh);
@@ -293,6 +365,10 @@ async function boot() {
     history.replaceState(null, '', location.pathname + location.search);
   }
   render();
+  if (isDesktop && !isQuick) {
+    onEvent<string>('hotkey-failed', (k) => { hotkeyIssue = k || st.s.hotkey; if (!modalOpen()) render(); });
+    hotkeyStatus().then((k) => { if (k) { hotkeyIssue = k; if (!modalOpen()) render(); } });
+  }
   // Background update check (throttled, silent on failure). Only the main window shows the notice.
   if (st.s.autoUpdate && !isQuick) checkForUpdate().then((u) => { if (u) { st.update = u; if (u.available && !modalOpen()) render(); } });
   // PWA: offline support for the web build (not inside Tauri, not in dev).

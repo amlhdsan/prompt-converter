@@ -7,7 +7,7 @@ import { isDesktop, modKey, prettyAccel } from '../../platform';
 import { closeModal, copyText, esc, modal } from '../dom';
 import { ensureKey, errorMessage, modeLabel, reqBase } from '../actions';
 import { icons } from '../icons';
-import { out, persist, st, t } from '../state';
+import { lang2, out, persist, st, t } from '../state';
 import { openSettings } from './settings';
 
 export function openShortcuts() {
@@ -15,6 +15,8 @@ export function openShortcuts() {
   const k = (...keys: string[]) => keys.map((x) => `<kbd>${esc(x)}</kbd>`).join('<span class="plus">+</span>');
   const rows: [string, string][] = [
     [k(modKey, 'Enter'), d.keys.convert],
+    [k(modKey, 'K'), d.keys.palette],
+    [k(modKey, 'Shift', 'B'), d.keys.batch],
     [k(modKey, 'Shift', 'C'), d.keys.copy],
     [k(modKey, 'Shift', 'R'), d.testRun],
     [k(modKey, ','), d.keys.settings],
@@ -30,7 +32,7 @@ export function openShortcuts() {
 }
 
 export function openLibrary(onPick: () => void) {
-  const d = t(); const lang = st.s.uiLang;
+  const d = t(); const lang = lang2();
   modal(d.library, `<p class="small muted">${d.libraryHint}</p>
     <div class="lib" role="list">${EXAMPLES.map((x) => `
       <button class="lib-item" data-ex="${x.id}" role="listitem">

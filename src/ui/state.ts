@@ -18,7 +18,13 @@ export const st = {
   error: '',
   update: null as UpdateInfo | null,
   shared: false,
+  /** Transient status line (retrying, stalled stream…). */
+  notice: '',
+  /** Set when the global error boundary caught something. */
+  crashed: null as null | { msg: string },
 };
+/** Content language for data that only exists in zh/en (examples, provider notes). */
+export const lang2 = (): 'zh' | 'en' => (st.s.uiLang === 'zh' ? 'zh' : 'en');
 export const out = () => st.outputs[st.active] ?? '';
 export const t = (): Dict => DICT[st.s.uiLang];
 export const persist = () => saveSettings(st.s);
