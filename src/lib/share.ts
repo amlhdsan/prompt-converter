@@ -5,7 +5,9 @@ export interface SharePayload { i: string; o: string; m?: string }
 const b64u = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 async function pipe(data: Uint8Array, stream: { readable: ReadableStream; writable: WritableStream }) {
-  const w = stream.writable.getWriter(); w.write(data); w.close();
+  const w = stream.writable.getWriter();
+  // Write errors (e.g. corrupt deflate data) also reject the readable side; swallow them here to avoid unhandled rejections.
+  w.write(data).catch(() => {}); w.close().catch(() => {});
   return new Uint8Array(await new Response(stream.readable).arrayBuffer());
 }
 function chunkedB64(bytes: Uint8Array) {
