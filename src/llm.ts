@@ -24,13 +24,15 @@ export function endpoint(baseUrl: string): string {
   return b.endsWith('/chat/completions') ? b : `${b}/chat/completions`;
 }
 
+import { pfetch } from './platform';
+
 export async function chat(req: ChatRequest): Promise<string> {
   if (!req.baseUrl.trim()) throw new LLMError('config', 'Base URL is empty');
   if (!req.model.trim()) throw new LLMError('config', 'Model is empty');
   if (!req.apiKey.trim()) throw new LLMError('auth', 'API key is empty');
   let res: Response;
   try {
-    res = await fetch(endpoint(req.baseUrl), {
+    res = await pfetch(endpoint(req.baseUrl), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${req.apiKey.trim()}` },
       body: JSON.stringify({ model: req.model.trim(), messages: req.messages, stream: !!req.stream, temperature: 0.4 }),

@@ -1,0 +1,76 @@
+# Tauri desktop release workflow (Windows / macOS / Linux).
+#
+# HOW TO ENABLE — this file lives in docs/ because the bot token used to push lacks `workflow` scope.
+#   mkdir -p .github/workflows && git mv docs/tauri-release.yml .github/workflows/tauri-release.yml
+#   git commit -m "ci: enable Tauri release workflow" && git push
+# Then in GitHub: Settings → Actions → General → Workflow permissions → "Read and write permissions".
+# Release: bump the version in package.json + src-tauri/tauri.conf.json (+ Cargo.toml), then
+#   git tag v1.2.1 && git push origin v1.2.1
+# The job builds installers for every platform and uploads them to the GitHub release for that tag
+# (creating it if needed, or adding assets to an existing one).
+name: Tauri Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest      # Apple Silicon
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest      # Intel
+            args: --target x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            args: ''
+          - platform: windows-latest
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional code signing — add these repository secrets to sign macOS / Windows builds:
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Prompt Converter ${{ github.ref_name }}'
+          releaseBody: 'See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md). 下载对应平台的安装包：Windows `.msi`/`-setup.exe`，macOS `.dmg`，Linux `.AppImage`/`.deb`/`.rpm`。'
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

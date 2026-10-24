@@ -1,4 +1,5 @@
 // In-app update check against GitHub. Throttled (once per 24h, cached in localStorage) and silent on failure.
+import { pfetch } from './platform';
 export const APP_VERSION = __APP_VERSION__;
 export const APP_COMMIT = __APP_COMMIT__;
 export const REPO = 'amlhdsan/prompt-converter';
@@ -26,7 +27,7 @@ export function cmpVersion(a: string, b: string): number {
 }
 
 async function getJSON(path: string): Promise<any | null> {
-  const r = await fetch(apiBase() + path, { headers: { Accept: 'application/vnd.github+json' } });
+  const r = await pfetch(apiBase() + path, { headers: { Accept: 'application/vnd.github+json' } });
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
