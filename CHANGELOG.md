@@ -2,6 +2,30 @@
 
 All notable changes are documented here. Format based on [Keep a Changelog](https://keepachangelog.com/), versions follow [SemVer](https://semver.org/).
 
+## [1.4.0] - 2026-10-24
+
+### Added
+- **Command palette** (`Ctrl/⌘+K`): fuzzy search over every action, dialog and mode.
+- **Batch convert** (`Ctrl/⌘+Shift+B`): one prompt per line or `---`-separated blocks, 2 at a time, saved to history, copy all / export Markdown.
+- **Placeholder fill**: a form for `[请补充 …]` / `[TODO …]` placeholders in the result; blanks are kept.
+- **Built-in mode instruction editor** with per-mode reset (Templates → Built-in mode instructions).
+- **Connection test** in Settings (non-streaming ping with latency).
+- **History export as Markdown**.
+- **Japanese UI** (zh → en → ja cycle); i18n completeness is enforced by unit tests.
+- **Unit tests** (Vitest, 67 tests) for SSE parsing, provider request/response formats, retries, stalls, aborts, storage migrations, corruption/quota recovery, import/export validation, diff, quality score, tokens, share encoding, Markdown safety, placeholders, batch runner, i18n parity.
+- **CI workflow** on push/PR: ESLint, TypeScript, unit, Playwright e2e, build, `cargo check`; README badge.
+
+### Changed / Stability
+- Network: automatic retry with exponential backoff + jitter for 429/5xx/network/timeout (only before any output, honours `Retry-After`, configurable 0–3, default 2); last retry falls back to non-streaming; streams that stall keep the partial text and show a notice; in-flight requests are aborted on page hide; robust incremental SSE parser (CRLF/CR, split chunks, multi-line data, `event: error`, non-JSON keep-alives); proxies that answer SSE to non-stream requests are handled.
+- Storage: versioned schema (v2) with ordered migrations, sanitisation of every record, corrupted JSON is backed up to `pc.corrupt.*` and reset (banner shown), quota errors evict old non-favourite history and finally fall back to memory (banner shown), multi-tab sync, import rejects backups from newer schemas.
+- Global error boundary: render errors show a recovery screen (reload / reset UI state / copy log); window errors and unhandled rejections are logged to an optional local error log (Settings → View error log).
+- TypeScript stricter (`noUnused*`, `noImplicitReturns`, …) and ESLint (flat config).
+- E2E: 117 checks; server start-up is polled instead of a fixed sleep (fixed a cold-start flake); verified 6 consecutive green runs.
+- Desktop: poison-tolerant locks, no `unwrap`/`expect` on startup paths, panic hook writes `panic.log` to the app log dir, `panic = "unwind"` so a worker-thread panic can't kill the app, window position/size saved 600 ms after move/resize, atomic backup writes, a banner when the saved global hotkey can't be registered (`hotkey_status` command + `hotkey-failed` event).
+
+### Not included
+- **In-app auto-updater**: Tauri's updater requires a signing key pair whose private key must be stored as the `TAURI_SIGNING_PRIVATE_KEY` repository secret. The token used for this release cannot write repository secrets, so the updater was skipped; the existing GitHub-release update notice remains.
+
 ## [1.3.0] - 2026-10-24
 
 ### Added

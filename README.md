@@ -2,6 +2,8 @@
 
 # ✨ 提示词转换器 · Prompt Converter
 
+[![CI](https://github.com/amlhdsan/prompt-converter/actions/workflows/ci.yml/badge.svg)](https://github.com/amlhdsan/prompt-converter/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/amlhdsan/prompt-converter)](https://github.com/amlhdsan/prompt-converter/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **把随手写的想法，一键变成结构清晰、效果更好的提示词。**
 
 纯前端 · 本地运行 · 自带 API Key · 12 个服务商 + 任意 OpenAI 兼容接口 · 可安装 PWA · 🖥️ Windows / macOS / Linux 桌面版
@@ -81,6 +83,10 @@ npx tauri build --bundles deb,appimage     # 仅构建 Linux 包
 | 快捷键 | 功能 |
 | --- | --- |
 | `Ctrl/⌘ + Enter` | 转换 / 停止 |
+| `Ctrl/⌘ + K` | 命令面板（搜索任意操作 / 场景） |
+| `Ctrl/⌘ + Shift + B` | 批量转换 |
+| `Ctrl/⌘ + Shift + R` | 试运行 |
+| `Ctrl/⌘ + Shift + E` | 示例库 |
 | `Ctrl/⌘ + Shift + C` | 复制结果 |
 | `Ctrl/⌘ + ,` | 打开设置 |
 | `Ctrl/⌘ + Shift + H` | 打开历史记录 |
@@ -130,6 +136,17 @@ git pull && docker compose up -d --build
 
 ## 🌟 功能
 
+**v1.4 新增**
+
+- 🧰 **命令面板** `Ctrl/⌘ + K`：模糊搜索所有操作、场景和对话框
+- 📦 **批量转换**：每行一条（或用 `---` 分隔多行提示词），并发 2 条，自动写入历史，可复制全部 / 导出 Markdown
+- ✍️ **填写占位**：结果中的 `[请补充：…]` / `[TODO: …]` 一键弹出表单填写并替换
+- 🛠️ **内置场景指令编辑器**：可修改 5 个内置场景发给模型的改写指令，随时「恢复默认」
+- 🔌 **测试连接**：设置中一键验证 Base URL / Key / 模型，显示延迟
+- 📝 **历史导出 Markdown**；🇯🇵 **日本語界面**（中文 → English → 日本語 循环切换）
+- 🛡️ **稳定性**：瞬时错误（429 / 5xx / 网络 / 超时）自动退避重试（可设 0–3 次，遵循 Retry-After，仅在尚未收到输出时重试）；最后一次重试自动改用非流式；流式输出中途卡住时保留已收到的部分；离开页面时中止请求；全局错误边界 + 恢复界面 + 可复制的本地错误日志；本地数据带版本迁移、损坏自动恢复（原数据备份）、存储已满时自动淘汰旧历史、多标签页实时同步
+- 🖥️ **桌面版稳定性**：窗口位置/大小在移动或缩放后自动保存（防抖）、单实例运行、全局快捷键注册失败时界面提示、Rust panic 写入日志不再连锁崩溃
+
 - 🧠 **结构化改写**：自动补全角色、目标、背景、约束、步骤、输出格式；缺失信息用 `[请补充: …]` 占位，不臆造事实
 - 🎯 **五种场景**：通用 / 编程 / 写作 / 分析研究 / 图像生成（输出主提示词、英文关键词、负面提示词与参数建议）
 - 🧩 **自定义模板**：点击场景栏的 ＋ 新建 / 编辑 / 删除自己的场景（名称、图标、转换指令），保存在本地并作为新场景出现
@@ -159,11 +176,14 @@ Vite + 原生 TypeScript；Web 版运行时不加载任何桌面依赖（Tauri �
 
 ```
 src/
-  main.ts      # UI 渲染与交互
-  llm.ts       # OpenAI 兼容客户端（SSE 流式、错误分类）+ 服务商预设
+  main.ts      # 应用外壳：渲染、全局错误边界、快捷键、命令面板
+  llm.ts       # OpenAI / Anthropic 客户端（SSE 流式、重试退避、卡顿检测、非流式回退、错误分类）
+  providers.ts # 12 个服务商预设
+  lib/         # 纯逻辑：sse、diff、quality、tokens、share、markdown、placeholders、batch、export、errlog
+  ui/          # 状态、DOM 工具、操作、输出区、悬浮窗、各类对话框（设置/历史/模板/工具）
   prompts.ts   # 各场景的系统提示词
-  i18n.ts      # 中英文文案
-  storage.ts   # localStorage 设置、模板、历史、导入导出
+  i18n.ts      # 中 / 英 / 日 文案（i18n.ja.ts）
+  storage.ts   # 带版本迁移的本地存储：设置、模板、历史、导入导出、损坏恢复、多标签同步
   platform.ts  # 桌面版（Tauri）能力的懒加载封装：原生 HTTP、剪贴板、快捷键、自启
   update.ts    # GitHub Releases 更新检查
   style.css    # 主题样式
@@ -171,17 +191,27 @@ src-tauri/     # Tauri v2 桌面壳（托盘、全局快捷键、悬浮窗）
 tests/
   mock-server.mjs  # 模拟 OpenAI 兼容接口（npm run mock）
   e2e.py           # Playwright 端到端测试
+  unit/            # Vitest 单元测试
 ```
 
-运行测试：`pip install playwright && playwright install chromium && npm run test:e2e`
+运行测试：
+
+```bash
+npm run lint && npm run typecheck   # ESLint + TypeScript 严格模式
+npm run test:unit                   # Vitest 单元测试（SSE 解析、服务商请求/响应、存储迁移、导入导出、diff、评分、分享编码、i18n 完整性…）
+pip install playwright && playwright install chromium && npm run test:e2e   # Playwright 端到端
+```
+
+每次 push / PR 都会在 [CI](https://github.com/amlhdsan/prompt-converter/actions/workflows/ci.yml) 中运行 lint、类型检查、单元测试、端到端测试、构建和 `cargo check`。
 
 ## 🗺️ 路线图
 
 - [x] v1：Web 版，多服务商，流式，多场景，历史记录，Docker
 - [x] v1.2：自定义模板、导入导出、历史搜索与收藏、更多输出语言、快捷键
 - [x] 🖥️ Tauri 桌面版：全局快捷键唤起悬浮窗、剪贴板、托盘、开机自启
-- [ ] 桌面版：选中文字直接替换、应用内自动更新
-- [ ] 多版本对比、迭代追问优化
+- [x] v1.3：多版本、迭代优化、质量评分、试运行、PWA
+- [x] v1.4：稳定性（重试/恢复/错误边界/迁移）、命令面板、批量转换、占位填写、日语界面、CI
+- [ ] 桌面版：选中文字直接替换、应用内自动更新（需要签名密钥，见 CHANGELOG）
 - [ ] 浏览器扩展
 - [ ] 可选在线演示（GitHub Pages，工作流模板在 `docs/github-pages-deploy.yml`，启用时移到 `.github/workflows/`，使用 `BASE_PATH=/prompt-converter/`）
 
@@ -215,6 +245,8 @@ Open ⚙️ Settings, pick a provider (DeepSeek / OpenAI / Qwen DashScope / cust
 
 Five built-in modes (general, coding, writing, analysis/research, image generation) plus **your own custom templates** (create / edit / delete, stored locally) · streaming · output language (auto, 10 presets, or any custom language) · compare view · one-click copy · local history with **search and favorites** · **import/export** of settings, templates and history as JSON · **keyboard shortcuts** (`Ctrl/⌘ + Enter` to convert, press `?` for the full list) · dark/light/system theme · Chinese UI with English toggle · clear CORS/auth/network errors.
 
+**New in 1.4:** command palette (`Ctrl/⌘+K`), batch convert (one prompt per line or `---`-separated, export as Markdown), fill-in form for `[TODO: …]` placeholders, editable instructions for built-in modes, provider connection test, history export as Markdown, Japanese UI. Stability: automatic retry with backoff for transient errors (before any output arrives, honours Retry-After, last attempt falls back to non-streaming), partial output kept when a stream stalls, requests aborted on navigation, global error boundary with recovery screen and a copyable local error log, versioned storage with migrations, corruption recovery, quota fallback and multi-tab sync. Desktop: debounced window-state saving, single instance, hotkey-failure banner, panic-safe Rust shell.
+
 ### Desktop app
 
 Built with Tauri v2 for Windows, macOS and Linux — download from [Releases](https://github.com/amlhdsan/prompt-converter/releases) (`.exe`/`.msi`, `.dmg`, `.AppImage`/`.deb`).
@@ -228,7 +260,7 @@ Built with Tauri v2 for Windows, macOS and Linux — download from [Releases](ht
 
 ### Shortcuts
 
-`Ctrl/⌘+Enter` convert/stop · `Ctrl/⌘+Shift+C` copy result · `Ctrl/⌘+,` settings · `Ctrl/⌘+Shift+H` history · `Ctrl/⌘+Shift+T` templates · `Alt+1…9` switch mode · `?` help · `Esc` close/stop · desktop global: `Ctrl/⌘+Shift+Space`.
+`Ctrl/⌘+Enter` convert/stop · `Ctrl/⌘+K` command palette · `Ctrl/⌘+Shift+B` batch convert · `Ctrl/⌘+Shift+C` copy result · `Ctrl/⌘+,` settings · `Ctrl/⌘+Shift+H` history · `Ctrl/⌘+Shift+T` templates · `Alt+1…9` switch mode · `?` help · `Esc` close/stop · desktop global: `Ctrl/⌘+Shift+Space`.
 
 ### Privacy
 
@@ -236,6 +268,6 @@ Your API key, templates and history are stored **only locally** (browser / deskt
 
 ### Roadmap
 
-Replace-selection in other apps · in-app auto-update · browser extension · optional GitHub Pages demo.
+Replace-selection in other apps · in-app auto-update (needs a signing key) · browser extension · optional GitHub Pages demo.
 
 License: MIT
