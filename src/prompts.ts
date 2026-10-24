@@ -39,3 +39,12 @@ export function buildMessages(input: string, hint: string, lang: string, customL
     { role: 'user' as const, content: `Original prompt:\n"""\n${input}\n"""` },
   ];
 }
+
+/** Follow-up refinement: keeps the original and the previous rewrite in context. */
+export function buildRefine(input: string, previous: string, instruction: string, hint: string, lang: string, customLang = '') {
+  const [sys, user] = buildMessages(input, hint, lang, customLang);
+  return [sys, user, { role: 'assistant' as const, content: previous },
+    { role: 'user' as const, content: `Revise the rewritten prompt above according to this instruction: ${instruction}\nOutput ONLY the complete revised prompt.` }];
+}
+/** Test-run: send the converted prompt itself to the model and preview the answer. */
+export const buildTestRun = (prompt: string) => [{ role: 'user' as const, content: prompt }];

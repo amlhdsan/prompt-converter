@@ -9,7 +9,23 @@ export interface Settings {
   hotkey: string;
   /** Desktop only: after a quick conversion, copy the result to the clipboard automatically. */
   quickAutoCopy: boolean;
+  /** Desktop only: after copying, hide the quick window and paste into the previously focused app. */
+  autoPaste: boolean;
+  /** Saved endpoint profiles (provider + base URL + model + key). */
+  profiles: Profile[];
+  activeProfile: string;
+  /** How many variants to generate per conversion (1–3). */
+  variants: number;
+  /** Output display: rendered Markdown or raw text. */
+  render: 'md' | 'raw';
+  /** Idle timeout for API calls, seconds. */
+  timeoutSec: number;
+  /** Keep API keys only for this browser session (sessionStorage) instead of localStorage. */
+  sessionKeys: boolean;
+  /** Show the local quality score panel. */
+  showScore: boolean;
 }
+export interface Profile { id: string; name: string; provider: string; baseUrl: string; model: string; apiKey: string }
 export interface HistoryItem { id: string; at: number; mode: string; input: string; output: string; model: string; fav?: boolean }
 /** A user-defined conversion mode. `prompt` is the instruction given to the model on how to restructure. */
 export interface Template { id: string; name: string; icon: string; prompt: string; at: number }
@@ -18,7 +34,8 @@ export const DEFAULT_HOTKEY = 'CommandOrControl+Shift+Space';
 export const DEFAULT_SETTINGS: Settings = {
   provider: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKeys: {},
   mode: 'general', outLang: 'auto', customLang: '', uiLang: 'zh', theme: 'system', stream: true,
-  autoUpdate: true, dismissedUpdate: '', hotkey: DEFAULT_HOTKEY, quickAutoCopy: true,
+  autoUpdate: true, dismissedUpdate: '', hotkey: DEFAULT_HOTKEY, quickAutoCopy: true, autoPaste: false,
+  profiles: [], activeProfile: '', variants: 1, render: 'md', timeoutSec: 60, sessionKeys: false, showScore: true,
 };
 export const HISTORY_MAX = 100;
 
@@ -27,8 +44,26 @@ function read<T>(k: string, d: T): T {
 }
 const readArr = <T>(k: string): T[] => { try { const v = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
 
-export const loadSettings = (): Settings => read(K.settings, DEFAULT_SETTINGS);
-export const saveSettings = (s: Settings) => localStorage.setItem(K.settings, JSON.stringify(s));
+const SESSION_KEYS = 'pc.keys.session';
+export function loadSettings(): Settings {
+  const s = read(K.settings, DEFAULT_SETTINGS);
+  s.apiKeys = { ...(s.apiKeys || {}) }; s.profiles = Array.isArray(s.profiles) ? s.profiles : [];
+  s.variants = Math.min(3, Math.max(1, Number(s.variants) || 1));
+  if (s.sessionKeys) {
+    try {
+      const k = JSON.parse(sessionStorage.getItem(SESSION_KEYS) || '{}');
+      s.apiKeys = { ...s.apiKeys, ...(k.apiKeys || {}) };
+      s.profiles = s.profiles.map((p) => ({ ...p, apiKey: k.profiles?.[p.id] ?? p.apiKey }));
+    } catch { /* ignore */ }
+  }
+  return s;
+}
+/** Persists settings. With `sessionKeys`, secrets go to sessionStorage and are stripped from localStorage. */
+export function saveSettings(s: Settings) {
+  if (!s.sessionKeys) { localStorage.setItem(K.settings, JSON.stringify(s)); sessionStorage.removeItem(SESSION_KEYS); return; }
+  sessionStorage.setItem(SESSION_KEYS, JSON.stringify({ apiKeys: s.apiKeys, profiles: Object.fromEntries(s.profiles.map((p) => [p.id, p.apiKey])) }));
+  localStorage.setItem(K.settings, JSON.stringify({ ...s, apiKeys: {}, profiles: s.profiles.map((p) => ({ ...p, apiKey: '' })) }));
+}
 
 export const loadHistory = (): HistoryItem[] => readArr<HistoryItem>(K.history);
 const saveHistory = (h: HistoryItem[]) => localStorage.setItem(K.history, JSON.stringify(h));
@@ -59,7 +94,7 @@ export const deleteTemplate = (id: string) => saveTemplates(loadTemplates().filt
 export interface Backup { app: 'prompt-converter'; version: string; exportedAt: string; settings?: Partial<Settings>; templates?: Template[]; history?: HistoryItem[] }
 export function exportData(version: string, opts: { settings: boolean; templates: boolean; history: boolean; keys: boolean }): Backup {
   const b: Backup = { app: 'prompt-converter', version, exportedAt: new Date().toISOString() };
-  if (opts.settings) { const s: Partial<Settings> = { ...loadSettings() }; if (!opts.keys) delete s.apiKeys; b.settings = s; }
+  if (opts.settings) { const s: Partial<Settings> = { ...loadSettings() }; if (!opts.keys) { delete s.apiKeys; s.profiles = (s.profiles || []).map((p) => ({ ...p, apiKey: '' })); } b.settings = s; }
   if (opts.templates) b.templates = loadTemplates();
   if (opts.history) b.history = loadHistory();
   return b;
@@ -71,7 +106,10 @@ export function importData(raw: unknown): { settings: boolean; templates: number
   const res = { settings: false, templates: 0, history: 0 };
   if (b.settings && typeof b.settings === 'object') {
     const cur = loadSettings();
-    saveSettings({ ...cur, ...b.settings, apiKeys: { ...cur.apiKeys, ...(b.settings.apiKeys || {}) } });
+    const inc = b.settings;
+    const profs = new Map(cur.profiles.map((p) => [p.id, p]));
+    (Array.isArray(inc.profiles) ? inc.profiles : []).forEach((p) => p?.id && profs.set(p.id, { ...p, apiKey: p.apiKey || profs.get(p.id)?.apiKey || '' }));
+    saveSettings({ ...cur, ...inc, apiKeys: { ...cur.apiKeys, ...(inc.apiKeys || {}) }, profiles: [...profs.values()] });
     res.settings = true;
   }
   if (Array.isArray(b.templates)) {
