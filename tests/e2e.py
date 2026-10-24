@@ -38,7 +38,8 @@ try:
         check(pg.locator('#update-notice').count() == 0, 'update notice dismissible')
         pg.reload(); pg.wait_for_timeout(300)
         check(pg.locator('#update-notice').count() == 0, 'dismissal persists')
-        check('v1.3.0' in pg.inner_text('footer'), 'version in footer')
+        VER = json.load(open(os.path.join(ROOT, 'package.json')))['version']
+        check('v' + VER in pg.inner_text('footer'), 'version in footer')
         check('提示词转换器' in pg.inner_text('h1'), 'default UI is Chinese')
         pg.fill('#input', '帮我写个python脚本批量重命名图片')
         pg.click('[data-mode="coding"]')
