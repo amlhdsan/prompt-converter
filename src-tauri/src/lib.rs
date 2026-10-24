@@ -134,6 +134,29 @@ fn show_main(app: AppHandle) {
     show_main_window(&app);
 }
 
+/// Hide the quick window, give focus back to the previous app, then send Ctrl/⌘+V.
+#[tauri::command]
+async fn paste_back(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("quick") {
+        let _ = w.hide();
+    }
+    std::thread::sleep(std::time::Duration::from_millis(180));
+    std::thread::spawn(|| -> Result<(), String> {
+        use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+        let mut e = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        let modifier = Key::Meta;
+        #[cfg(not(target_os = "macos"))]
+        let modifier = Key::Control;
+        e.key(modifier, Direction::Press).map_err(|e| e.to_string())?;
+        e.key(Key::Unicode('v'), Direction::Click).map_err(|e| e.to_string())?;
+        e.key(modifier, Direction::Release).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .join()
+    .map_err(|_| "paste thread panicked".to_string())?
+}
+
 #[tauri::command]
 fn write_text_file(path: String, contents: String) -> Result<(), String> {
     std::fs::write(path, contents).map_err(|e| e.to_string())
@@ -184,6 +207,12 @@ fn sys_locale_is_en() -> bool {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)))
+        .plugin(
+            // Remember window size/position (but never auto-show the hidden quick window).
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE)
+                .build(),
+        )
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -199,7 +228,7 @@ pub fn run() {
                 .build(),
         )
         .manage(AppState { hotkey: Mutex::new(String::new()), autostart_item: Mutex::new(None) })
-        .invoke_handler(tauri::generate_handler![set_hotkey, get_autostart, set_autostart, hide_quick, show_main, write_text_file])
+        .invoke_handler(tauri::generate_handler![set_hotkey, get_autostart, set_autostart, hide_quick, show_main, write_text_file, paste_back])
         .setup(|app| {
             let handle = app.handle().clone();
             let saved = hotkey_path(&handle)

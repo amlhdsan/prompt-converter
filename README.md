@@ -4,7 +4,7 @@
 
 **把随手写的想法，一键变成结构清晰、效果更好的提示词。**
 
-纯前端 · 本地运行 · 自带 API Key · 支持任意 OpenAI 兼容接口 · 🖥️ Windows / macOS / Linux 桌面版
+纯前端 · 本地运行 · 自带 API Key · 12 个服务商 + 任意 OpenAI 兼容接口 · 可安装 PWA · 🖥️ Windows / macOS / Linux 桌面版
 
 [English](#english) · [快速开始](#-快速开始本地部署) · [桌面版](#️-桌面版--desktop-app) · [快捷键](#️-快捷键--shortcuts) · [更新](#-更新--updating) · [隐私说明](#-隐私说明) · [路线图](#️-路线图)
 

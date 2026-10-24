@@ -1,6 +1,6 @@
 [package]
 name = "prompt-converter"
-version = "1.2.1"
+version = "1.3.0"
 description = "提示词转换器 Prompt Converter — desktop app"
 authors = ["amlhdsan"]
 license = "MIT"
@@ -28,6 +28,8 @@ serde_json = "1"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
+enigo = "0.2"
 
 [profile.release]
 codegen-units = 1
