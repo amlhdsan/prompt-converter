@@ -2,6 +2,11 @@
 
 All notable changes are documented here. Format based on [Keep a Changelog](https://keepachangelog.com/), versions follow [SemVer](https://semver.org/).
 
+## [1.2.1] - 2026-10-24
+
+### Added
+- Cross-platform desktop installers built by GitHub Actions (`.github/workflows/tauri-release.yml`): Windows (`.msi` / `-setup.exe`), macOS (`.dmg` for Apple Silicon and Intel), Linux (`.AppImage` / `.deb` / `.rpm`).
+
 ## [1.2.0] - 2026-10-24
 
 ### Added
