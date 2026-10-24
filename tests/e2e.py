@@ -5,7 +5,17 @@ from playwright.sync_api import sync_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 mock = subprocess.Popen(['node', 'tests/mock-server.mjs', '8787'], cwd=ROOT)
 prev = subprocess.Popen(['npx', 'vite', 'preview', '--port', '4174', '--strictPort'], cwd=ROOT, stdout=subprocess.DEVNULL, start_new_session=True)
-time.sleep(2.5)
+def wait_http(url, timeout=30):
+    # Poll until a server answers instead of sleeping a fixed time (fixes flaky cold starts).
+    import urllib.request
+    end = time.time() + timeout
+    while time.time() < end:
+        try: urllib.request.urlopen(url, timeout=1); return
+        except Exception as e:
+            if getattr(e, 'code', None): return  # any HTTP response means it's up
+            time.sleep(0.2)
+    raise RuntimeError('server did not start: ' + url)
+wait_http('http://127.0.0.1:8787/__last'); wait_http('http://127.0.0.1:4174/')
 ok = True
 def check(c, msg):
     global ok
@@ -20,7 +30,7 @@ try:
         pg.evaluate(f"localStorage.setItem('pc.settings.v1', JSON.stringify({json.dumps(settings)}))")
         pg.evaluate("localStorage.setItem('pc.updateApi','http://127.0.0.1:8787'); localStorage.removeItem('pc.update.v1')")
         pg.reload()
-        pg.wait_for_selector('#update-notice', timeout=5000)
+        pg.wait_for_selector('#update-notice', timeout=15000)
         check('v9.9.0' in pg.inner_text('#update-notice'), 'update notice shown for newer release')
         pg.locator('#update-notice').screenshot(path=os.path.join(ROOT, 'docs/update-notice.png'))
         pg.screenshot(path=os.path.join(ROOT, 'docs/update-notice-full.png'))
@@ -147,7 +157,7 @@ try:
         pg.keyboard.press('Control+Shift+H'); check(pg.locator('#h-search').count() == 1, 'Ctrl+Shift+H opens history'); pg.keyboard.press('Escape')
         pg.click('h1'); pg.keyboard.press('Alt+2'); check(pg.get_attribute('[data-mode="coding"]', 'aria-selected') == 'true', 'Alt+2 switches mode')
         pg.click('#btn-lang'); pg.click('#btn-keys'); check('Convert' in pg.inner_text('#keys-table'), 'shortcuts help in English'); pg.keyboard.press('Escape')
-        pg.click('#btn-templates'); check('My templates' in pg.inner_text('.modal-h'), 'templates dialog in English'); pg.keyboard.press('Escape'); pg.click('#btn-lang')
+        pg.click('#btn-templates'); check('My templates' in pg.inner_text('.modal-h'), 'templates dialog in English'); pg.keyboard.press('Escape'); pg.click('#btn-lang'); pg.click('#btn-lang')
         # quick-convert view (desktop floating window UI, rendered via #quick)
         q = ctx.new_page(); q.set_viewport_size({'width': 600, 'height': 440})
         q.goto('http://127.0.0.1:4174/#quick'); q.wait_for_selector('.quick-wrap')
@@ -160,7 +170,7 @@ try:
         def patch(obj, reload=True):
             pg.evaluate("(p)=>{const s=JSON.parse(localStorage.getItem('pc.settings.v1'));Object.assign(s,p);localStorage.setItem('pc.settings.v1',JSON.stringify(s))}", obj)
             if reload: pg.reload(); pg.wait_for_selector('#input')
-        BASE = {'provider': 'custom', 'baseUrl': 'http://127.0.0.1:8787/v1', 'model': 'mock-model', 'apiKeys': {'custom': 'sk-test'}, 'stream': True, 'variants': 1, 'render': 'md', 'timeoutSec': 60, 'mode': 'coding', 'uiLang': 'zh', 'theme': 'light', 'outLang': 'auto'}
+        BASE = {'provider': 'custom', 'baseUrl': 'http://127.0.0.1:8787/v1', 'model': 'mock-model', 'apiKeys': {'custom': 'sk-test'}, 'stream': True, 'variants': 1, 'render': 'md', 'timeoutSec': 60, 'mode': 'coding', 'uiLang': 'zh', 'theme': 'light', 'outLang': 'auto', 'retries': 0}
         patch(BASE)
         def convert_text(txt):
             pg.fill('#input', txt); pg.click('#btn-convert'); pg.wait_for_selector('#output'); wait_done()
@@ -272,6 +282,89 @@ try:
         pg.click('[data-view="diff"]'); pg.wait_for_timeout(100)
         check(pg.evaluate("window.__xss === undefined && !document.querySelector('.diffview img')"), 'no XSS in diff view')
         pg.click('[data-view="single"]')
+
+        # ---------- v1.4: stability + tools ----------
+        patch(BASE)
+        # retry with backoff on transient 503
+        patch({'apiKeys': {'custom': 'sk-flaky'}, 'retries': 2})
+        pg.fill('#input', '重试测试'); pg.click('#btn-convert'); pg.wait_for_selector('#output'); wait_done()
+        check(pg.locator('.error').count() == 0 and '输出格式' in pg.inner_text('#output'), 'transient 503 is retried automatically')
+        # stalled stream keeps the partial output
+        patch({'apiKeys': {'custom': 'sk-stall'}, 'timeoutSec': 5, 'retries': 2})
+        pg.fill('#input', '中断测试'); pg.click('#btn-convert')
+        pg.wait_for_function("!document.querySelector('.card.busy')", timeout=15000)
+        check('已收到的内容' in pg.inner_text('#output') and '保留' in pg.inner_text('#notice-line'), 'stalled stream keeps partial result + notice')
+        patch(BASE)
+        # connection test
+        pg.click('#btn-settings'); pg.click('#f-conn'); pg.wait_for_function("document.querySelector('#f-conn-status').innerText.includes('✓')")
+        check('mock-model' in pg.inner_text('#f-conn-status') and last_req()['stream'] is False, 'connection test succeeds (non-stream ping)')
+        pg.fill('#f-key', 'sk-bad'); pg.click('#f-conn'); pg.wait_for_function("document.querySelector('#f-conn-status').innerText.includes('✕')")
+        check(True, 'connection test reports failure')
+        pg.fill('#f-key', 'sk-test'); pg.keyboard.press('Escape')
+        # built-in mode instruction editor
+        pg.click('#btn-templates'); pg.click('#tpl-builtin'); pg.wait_for_selector('#mh-text')
+        pg.click('[data-mh="writing"]'); pg.fill('#mh-text', 'CUSTOM_WRITING_HINT 请写得像诗。'); pg.click('#mh-save')
+        check(pg.inner_text('#mh-state') != '', 'mode hint marked customized')
+        pg.keyboard.press('Escape'); pg.click('[data-mode="writing"]'); convert_text('写一段文案')
+        check('CUSTOM_WRITING_HINT' in last_req()['messages'][0]['content'], 'custom built-in mode hint is sent')
+        pg.click('#btn-templates'); pg.click('#tpl-builtin'); pg.click('[data-mh="writing"]'); pg.click('#mh-reset')
+        check('CUSTOM_WRITING_HINT' not in pg.input_value('#mh-text'), 'mode hint reset to default')
+        pg.keyboard.press('Escape'); pg.click('[data-mode="coding"]')
+        # placeholder fill
+        convert_text('PLACEHOLDER 产品介绍')
+        check(pg.locator('#btn-fill').count() == 1, 'fill-placeholders button appears')
+        pg.click('#btn-fill'); pg.wait_for_selector('[data-ph]')
+        check(pg.locator('[data-ph]').count() == 2, 'two placeholders detected')
+        pg.fill('[data-ph="0"]', '星光咖啡'); pg.click('#fill-form button[type=submit]'); pg.wait_for_timeout(100)
+        o = pg.inner_text('#output')
+        check('星光咖啡' in o and '请补充' not in o and 'TODO' in o, 'placeholders filled, blanks kept')
+        # command palette
+        pg.keyboard.press('Control+k'); pg.wait_for_selector('#cp-input')
+        pg.keyboard.type('history'); pg.wait_for_timeout(50)
+        check(pg.locator('.cp-item').count() >= 1, 'palette filters commands')
+        pg.fill('#cp-input', 'zzzzqqq'); check(pg.locator('.cp-item').count() == 0, 'palette shows empty state')
+        pg.fill('#cp-input', '主题'); pg.keyboard.press('Enter'); pg.wait_for_timeout(100)
+        check(not pg.evaluate("!!document.querySelector('#modal-root .overlay')"), 'palette runs a command and closes')
+        patch({'theme': 'light'})
+        pg.keyboard.press('Control+k'); pg.wait_for_selector('#cp-input'); pg.fill('#cp-input', '写作'); pg.keyboard.press('ArrowDown'); pg.keyboard.press('ArrowUp'); pg.keyboard.press('Enter'); pg.wait_for_timeout(100)
+        check(pg.get_attribute('[data-mode="writing"]', 'aria-selected') == 'true', 'palette switches mode')
+        pg.click('[data-mode="coding"]')
+        # batch convert
+        pg.keyboard.press('Control+Shift+B'); pg.wait_for_selector('#b-input')
+        pg.fill('#b-input', '第一条\n第二条\n第三条'); check('3' in pg.inner_text('#b-status'), 'batch counts prompts')
+        pg.click('#b-run'); pg.wait_for_function("document.querySelectorAll('.batch-item').length === 3 && !document.querySelector('#b-list .spin') && !document.querySelector('#b-copy').disabled", timeout=15000)
+        check(pg.locator('.batch-item.failed').count() == 0 and '3/3' in pg.inner_text('#b-status'), 'batch converts all items')
+        with pg.expect_download() as dl:
+            pg.click('#b-export')
+        bm = open(dl.value.path(), encoding='utf-8').read()
+        import re; check(len(re.findall(r'^## \d+\. ', bm, re.M)) == 3 and '第二条' in bm, 'batch export markdown')
+        pg.keyboard.press('Escape')
+        # history markdown export
+        pg.click('#btn-history'); pg.wait_for_selector('#h-export')
+        with pg.expect_download() as dl:
+            pg.click('#h-export')
+        hm = open(dl.value.path(), encoding='utf-8').read()
+        check(hm.startswith('# 历史记录') and '第三条' in hm, 'history export markdown')
+        pg.keyboard.press('Escape')
+        # corrupted storage recovery
+        pg.evaluate("localStorage.setItem('pc.history.v1', '{broken')"); pg.reload(); pg.wait_for_selector('#input')
+        check(pg.locator('#recovered-banner').count() == 1 and pg.evaluate("localStorage.getItem('pc.corrupt.pc.history.v1') === '{broken'"), 'corrupted data recovered + backed up')
+        pg.click('#recovered-dismiss')
+        # error boundary: a render crash shows the recovery UI, reset restores
+        pg.evaluate("window.dispatchEvent(new ErrorEvent('error', {error: new Error('boom-test'), message: 'boom-test'}))"); pg.wait_for_timeout(100)
+        check(pg.evaluate("JSON.parse(localStorage.getItem('pc.errors.v1')||'[]').some(e => e.msg === 'boom-test')"), 'global errors are logged locally')
+        pg.click('#btn-settings'); pg.click('#f-viewlog'); pg.wait_for_selector('#log-pre')
+        check('boom-test' in pg.inner_text('#log-pre'), 'error log viewer')
+        pg.click('#log-clear'); check(pg.locator('#log-pre').count() == 0, 'error log cleared'); pg.keyboard.press('Escape')
+        pg.evaluate("localStorage.setItem('pc.settings.v1', JSON.stringify(Object.assign(JSON.parse(localStorage.getItem('pc.settings.v1')), {mode: {bad: 1}})))")
+        pg.evaluate("localStorage.setItem('pc.history.v1', JSON.stringify([{id:'x',at:1,mode:'general',input:'a',output:'b',model:'m'}]))")
+        pg.reload(); pg.wait_for_selector('#input')
+        check(pg.locator('.crash').count() == 0, 'malformed settings are sanitized instead of crashing')
+        # multi-tab sync
+        t2 = ctx.new_page(); t2.goto('http://127.0.0.1:4174/'); t2.wait_for_selector('#input')
+        pg.click('[data-mode="analysis"]'); t2.wait_for_timeout(300)
+        check(t2.get_attribute('[data-mode="analysis"]', 'aria-selected') == 'true', 'settings sync across tabs')
+        t2.close(); pg.click('[data-mode="coding"]')
         # mobile layout
         m = ctx.new_page(); m.set_viewport_size({'width': 390, 'height': 844}); m.goto('http://127.0.0.1:4174/'); m.wait_for_selector('#input')
         cols = m.evaluate("getComputedStyle(document.querySelector('.grid')).gridTemplateColumns.split(' ').length")
@@ -293,7 +386,8 @@ try:
         convert_text('帮我写个python脚本批量重命名图片')
         pg.screenshot(path=os.path.join(ROOT, 'docs/screenshot.png'))
         pg.click('#btn-lang'); check('Prompt Converter' in pg.inner_text('h1'), 'English toggle')
-        pg.click('#btn-lang')
+        pg.click('#btn-lang'); check(pg.evaluate("document.documentElement.lang") == 'ja' and 'プロンプト' in pg.inner_text('h1'), 'Japanese toggle')
+        pg.click('#btn-lang'); check(pg.evaluate("document.documentElement.lang") == 'zh-CN', 'language cycles back to Chinese')
         # dark screenshot
         pg.evaluate("(()=>{const s=JSON.parse(localStorage.getItem('pc.settings.v1'));s.theme='dark';s.apiKeys.custom='sk-test';s.baseUrl='http://127.0.0.1:8787/v1';s.stream=true;localStorage.setItem('pc.settings.v1',JSON.stringify(s))})()")
         pg.reload(); pg.fill('#input', '帮我写个python脚本批量重命名图片'); pg.click('[data-mode="coding"]'); pg.click('#btn-convert')

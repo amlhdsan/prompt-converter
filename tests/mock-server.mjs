@@ -1,11 +1,14 @@
 // Mock LLM server for tests & demos: OpenAI-compatible + Anthropic Messages, SSE streaming + JSON, /models,
 // error simulation, and a mock GitHub releases API. Usage: node tests/mock-server.mjs [port]
-//   Keys: sk-test → OK · sk-rate → 429 · sk-500 → 500 · sk-slow → never answers (timeout) · anything else → 401
+//   Keys: sk-test → OK · sk-rate → 429 · sk-500 → 500 · sk-slow → never answers (timeout) · sk-flaky → 503 on every
+//   odd request, then OK · sk-stall → streams a few chunks then hangs · anything else → 401
 import http from 'node:http';
 const port = Number(process.argv[2] || 8787);
 const REPLY = '## 角色\n你是一名资深 Python 工程师。\n\n## 目标\n编写一个批量重命名图片的脚本。\n\n## 约束\n- 使用 Python 3.10+ 标准库\n- 处理重名冲突\n\n## 步骤\n1. 扫描目录\n2. 生成新文件名\n3. 安全重命名\n\n## 输出格式\n完整代码 + 使用说明';
 const REFINED = '## 角色\n资深 Python 工程师\n\n## 目标\n批量重命名图片（精简版）\n\n## 输出格式\n完整代码';
 const ANSWER = '```python\nimport os\nfor i, f in enumerate(sorted(os.listdir("."))):\n    os.rename(f, f"img_{i}.jpg")\n```\n\nTEST_RUN_ANSWER';
+let flaky = 0;
+const PH_REPLY = '## 角色\n你是一名文案策划。\n\n## 目标\n为 [请补充：产品名称] 写一段介绍，面向 [TODO: 目标用户]。\n\n## 输出格式\n3 段文字';
 let last = null; // last chat request body (for assertions)
 let lastHeaders = null;
 const json = (res, code, obj, extra = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', ...extra }); res.end(JSON.stringify(obj)); };
@@ -30,15 +33,18 @@ http.createServer((req, res) => {
   req.on('end', () => {
     const noKeyOk = req.url.startsWith('/nokey');
     if (key === 'sk-slow') return; // never respond → client idle timeout
+    if (key === 'sk-flaky' && flaky++ % 2 === 0) return json(res, 503, { error: { message: 'Service unavailable' } });
+    if (key === 'sk-stall') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '## 部分结果\n已收到的内容' } }] })}\n\n`); return; }
     if (key === 'sk-rate') return json(res, 429, { error: { message: 'Rate limit reached' } }, { 'Retry-After': '7' });
     if (key === 'sk-500') return json(res, 500, { error: { message: 'Internal error' } });
-    if (key !== 'sk-test' && !noKeyOk) return json(res, 401, { error: { message: 'Invalid API key' } });
+    if (key !== 'sk-test' && key !== 'sk-flaky' && !noKeyOk) return json(res, 401, { error: { message: 'Invalid API key' } });
     const j = JSON.parse(body || '{}');
     last = j; lastHeaders = req.headers;
     const msgs = j.messages || [];
     const isTest = msgs.length === 1 && msgs[0].role === 'user' && !j.system;
     const isRefine = msgs.some((m) => m.role === 'assistant');
-    const reply = isTest ? ANSWER : isRefine ? REFINED : REPLY;
+    const wantsPh = msgs.some((m) => m.role === 'user' && String(m.content).includes('PLACEHOLDER'));
+    const reply = isTest ? ANSWER : isRefine ? REFINED : wantsPh ? PH_REPLY : (msgs.slice(-1)[0]?.content === 'ping' ? 'pong' : REPLY);
     if (j.stream) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
       const parts = reply.match(/[\s\S]{1,6}/g);
