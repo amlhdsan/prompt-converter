@@ -59,3 +59,5 @@ export function eventToAccelerator(e: KeyboardEvent): string {
   return parts.join('+');
 }
 export const prettyAccel = (a: string) => a.replace('CommandOrControl', modKey).replace(/\+/g, ' + ');
+/** Desktop: hide the quick window and paste (Ctrl/⌘+V) into the app that was focused before it. */
+export const pasteBack = () => invoke<void>('paste_back');
