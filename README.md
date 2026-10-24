@@ -72,7 +72,7 @@ npm run tauri:build                        # 产物在 src-tauri/target/release/
 npx tauri build --bundles deb,appimage     # 仅构建 Linux 包
 ```
 
-多平台安装包由 GitHub Actions 自动构建：工作流模板在 [`docs/tauri-release.yml`](docs/tauri-release.yml)，移动到 `.github/workflows/` 后，推送 `v*` 标签即可构建 Windows / macOS / Linux 并上传到 Release（见文件顶部说明）。
+多平台安装包由 GitHub Actions 自动构建：工作流 [`.github/workflows/tauri-release.yml`](.github/workflows/tauri-release.yml)，推送 `v*` 标签即可构建 Windows / macOS / Linux 并上传到 Release。
 
 ## ⌨️ 快捷键 / Shortcuts
 
@@ -224,7 +224,7 @@ Built with Tauri v2 for Windows, macOS and Linux — download from [Releases](ht
 - Requests use a native HTTP client, so provider **CORS restrictions don't apply**.
 - Update check against GitHub Releases; the notice opens the download page in your browser.
 - Linux: the global hotkey needs X11 (most Wayland compositors block global shortcuts); the tray needs AppIndicator support.
-- Build from source: install Rust, then `npm install && npm run tauri:build` (Linux deps listed above). CI workflow template: [`docs/tauri-release.yml`](docs/tauri-release.yml) — move it to `.github/workflows/` and push a `v*` tag.
+- Build from source: install Rust, then `npm install && npm run tauri:build` (Linux deps listed above). CI: [`.github/workflows/tauri-release.yml`](.github/workflows/tauri-release.yml) builds all platforms when a `v*` tag is pushed.
 
 ### Shortcuts
 

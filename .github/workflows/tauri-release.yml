@@ -1,13 +1,7 @@
 # Tauri desktop release workflow (Windows / macOS / Linux).
-#
-# HOW TO ENABLE — this file lives in docs/ because the bot token used to push lacks `workflow` scope.
-#   mkdir -p .github/workflows && git mv docs/tauri-release.yml .github/workflows/tauri-release.yml
-#   git commit -m "ci: enable Tauri release workflow" && git push
-# Then in GitHub: Settings → Actions → General → Workflow permissions → "Read and write permissions".
-# Release: bump the version in package.json + src-tauri/tauri.conf.json (+ Cargo.toml), then
-#   git tag v1.2.1 && git push origin v1.2.1
-# The job builds installers for every platform and uploads them to the GitHub release for that tag
-# (creating it if needed, or adding assets to an existing one).
+# Release: bump the version in package.json, src-tauri/tauri.conf.json and src-tauri/Cargo.toml, then
+#   git tag vX.Y.Z && git push origin vX.Y.Z
+# Builds installers for every platform and uploads them to the GitHub release for that tag.
 name: Tauri Release
 
 on:
