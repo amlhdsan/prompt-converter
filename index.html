@@ -2,12 +2,21 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- Strict CSP: only our own scripts; connect-src is open because you choose the LLM endpoint (BYOK). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src * ipc: http://ipc.localhost; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'self'; manifest-src 'self'" />
+  <meta name="referrer" content="no-referrer" />
   <title>提示词转换器 · Prompt Converter</title>
-  <meta name="description" content="把随手写的提示词一键转换成结构化、高质量的提示词。纯前端，API Key 仅保存在你的浏览器。" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✨</text></svg>" />
+  <meta name="description" content="把随手写的提示词一键转换成结构化、高质量的提示词。纯前端，API Key 仅保存在你的设备上。" />
+  <meta name="theme-color" content="#f5f5f7" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="./favicon.png" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="提示词转换器" />
 </head>
 <body>
+  <noscript>需要启用 JavaScript · JavaScript is required.</noscript>
   <div id="app"></div>
   <script type="module" src="/src/main.ts"></script>
 </body>
