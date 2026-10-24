@@ -13,7 +13,7 @@ def check(c, msg):
 try:
     with sync_playwright() as p:
         b = p.chromium.launch()
-        ctx = b.new_context(viewport={'width': 1440, 'height': 960}, device_scale_factor=2, accept_downloads=True)
+        ctx = b.new_context(viewport={'width': 1440, 'height': 960}, device_scale_factor=2, accept_downloads=True, permissions=['clipboard-read', 'clipboard-write'], bypass_csp=True)
         pg = ctx.new_page()
         pg.goto('http://127.0.0.1:4174/')
         settings = {'provider': 'custom', 'baseUrl': 'http://127.0.0.1:8787/v1', 'model': 'mock-model', 'apiKeys': {'custom': 'sk-test'}, 'stream': True}
@@ -28,7 +28,7 @@ try:
         check(pg.locator('#update-notice').count() == 0, 'update notice dismissible')
         pg.reload(); pg.wait_for_timeout(300)
         check(pg.locator('#update-notice').count() == 0, 'dismissal persists')
-        check('v1.2.0' in pg.inner_text('footer'), 'version in footer')
+        check('v1.3.0' in pg.inner_text('footer'), 'version in footer')
         check('提示词转换器' in pg.inner_text('h1'), 'default UI is Chinese')
         pg.fill('#input', '帮我写个python脚本批量重命名图片')
         pg.click('[data-mode="coding"]')
@@ -38,8 +38,7 @@ try:
         check('资深 Python 工程师' in out and '输出格式' in out, 'streaming conversion rendered')
         hist = pg.evaluate("JSON.parse(localStorage.getItem('pc.history.v1')||'[]').length")
         check(hist == 1, 'history saved')
-        pg.screenshot(path=os.path.join(ROOT, 'docs/screenshot.png'))
-        pg.click('[data-view="diff"]'); check(pg.locator('.diff').count() == 1, 'compare view')
+        pg.click('[data-view="compare"]'); check(pg.locator('.diff').count() == 1, 'compare view')
         pg.click('[data-view="single"]')
         # non-stream path
         pg.evaluate("(()=>{const s=JSON.parse(localStorage.getItem('pc.settings.v1'));s.stream=false;localStorage.setItem('pc.settings.v1',JSON.stringify(s))})()")
@@ -57,7 +56,9 @@ try:
         # ---------- v1.2 features ----------
         import urllib.request
         def last_req():
-            return json.loads(urllib.request.urlopen('http://127.0.0.1:8787/__last').read() or b'null')
+            return json.loads(urllib.request.urlopen('http://127.0.0.1:8787/__last').read() or b'null')['body']
+        def last_headers():
+            return json.loads(urllib.request.urlopen('http://127.0.0.1:8787/__last').read())['headers']
         def sys_prompt():
             return last_req()['messages'][0]['content']
         def wait_done():
@@ -154,6 +155,143 @@ try:
         q.wait_for_function("!document.querySelector('.q-out.busy')")
         check('输出格式' in q.inner_text('#output'), 'quick window converts')
         q.screenshot(path=os.path.join(ROOT, 'docs/quick-window.png')); q.close()
+
+        # ---------- v1.3 features ----------
+        def patch(obj, reload=True):
+            pg.evaluate("(p)=>{const s=JSON.parse(localStorage.getItem('pc.settings.v1'));Object.assign(s,p);localStorage.setItem('pc.settings.v1',JSON.stringify(s))}", obj)
+            if reload: pg.reload(); pg.wait_for_selector('#input')
+        BASE = {'provider': 'custom', 'baseUrl': 'http://127.0.0.1:8787/v1', 'model': 'mock-model', 'apiKeys': {'custom': 'sk-test'}, 'stream': True, 'variants': 1, 'render': 'md', 'timeoutSec': 60, 'mode': 'coding', 'uiLang': 'zh', 'theme': 'light', 'outLang': 'auto'}
+        patch(BASE)
+        def convert_text(txt):
+            pg.fill('#input', txt); pg.click('#btn-convert'); pg.wait_for_selector('#output'); wait_done()
+        convert_text('帮我写个python脚本批量重命名图片')
+        # markdown render / raw toggle
+        check(pg.locator('#output.md h3, #output.md h2').count() >= 3, 'markdown rendered by default')
+        pg.click('[data-render="raw"]'); check(pg.locator('pre#output').count() == 1 and '## 角色' in pg.inner_text('#output'), 'raw view shows markdown source')
+        pg.click('[data-render="md"]')
+        # diff view
+        pg.click('[data-view="diff"]'); check(pg.locator('.diffview ins').count() > 0, 'diff view highlights insertions')
+        pg.screenshot(path=os.path.join(ROOT, 'docs/diff.png'))
+        pg.click('[data-view="single"]')
+        # tokens + cost + quality
+        check('tokens' in pg.inner_text('#out-count'), 'token estimate shown')
+        q = pg.locator('#quality .num').all_inner_texts()
+        check(len(q) == 2 and int(q[1]) > int(q[0]), f'quality score improves {q}')
+        check(pg.locator('#q-tips li').count() >= 1, 'quality suggestions listed')
+        # refine
+        pg.click('[data-refine="shorter"]'); pg.wait_for_selector('#refine-input'); wait_done()
+        check('精简版' in pg.inner_text('#output') and any(m['role'] == 'assistant' for m in last_req()['messages']), 'refine chip sends follow-up with context')
+        pg.fill('#refine-input', '加上错误处理'); pg.press('#refine-input', 'Enter'); pg.wait_for_selector('#refine-input'); wait_done()
+        check('加上错误处理' in last_req()['messages'][-1]['content'], 'custom refine instruction')
+        # test run
+        pg.click('#btn-test'); pg.wait_for_function("document.querySelector('#tr-out') && document.querySelector('#tr-out').innerText.includes('TEST_RUN_ANSWER')")
+        check(pg.locator('#tr-out pre code').count() == 1, 'test run renders answer (code block)')
+        check(last_req()['messages'][0]['content'].startswith('## 角色'), 'test run sends converted prompt as user message')
+        pg.screenshot(path=os.path.join(ROOT, 'docs/test-run.png'))
+        pg.keyboard.press('Escape')
+        # export .md / .txt
+        pg.click('#btn-more'); check(pg.locator('#more-menu').is_visible(), 'more menu opens')
+        with pg.expect_download() as dl:
+            pg.click('#btn-export-md')
+        md = open(dl.value.path(), encoding='utf-8').read()
+        check(dl.value.suggested_filename.endswith('.md') and '## 原始提示词' in md and '## 转换结果' in md, 'export markdown')
+        pg.click('#btn-more')
+        with pg.expect_download() as dl:
+            pg.click('#btn-export-txt')
+        check(dl.value.suggested_filename.endswith('.txt'), 'export txt')
+        # share via URL hash
+        pg.click('#btn-more'); pg.click('#btn-share'); pg.wait_for_timeout(300)
+        url = pg.evaluate('navigator.clipboard.readText()')
+        check('#share=' in url, 'share link copied')
+        sp = ctx.new_page(); sp.goto(url); sp.wait_for_selector('#shared-banner')
+        check('精简版' in sp.inner_text('#output') and sp.input_value('#input').startswith('帮我写个python'), 'share link restores prompt')
+        check('#share' not in sp.url, 'share hash removed from address bar')
+        sp.close()
+        # variants
+        patch({'variants': 2})
+        convert_text('多版本测试')
+        check(pg.locator('[data-variant]').count() == 2, 'two variants generated')
+        pg.click('[data-variant="1"]'); check(pg.get_attribute('[data-variant="1"]', 'aria-selected') == 'true', 'switch variant')
+        patch({'variants': 1})
+        # library
+        pg.click('#btn-library'); pg.wait_for_selector('.lib-item')
+        check(pg.locator('.lib-item').count() >= 10, 'example library')
+        pg.click('[data-ex="weekly"]'); check('周报' in pg.input_value('#input') and pg.get_attribute('[data-mode="writing"]', 'aria-selected') == 'true', 'example fills input and mode')
+        # errors: rate limit, server, timeout
+        patch({'apiKeys': {'custom': 'sk-rate'}}); pg.fill('#input', 'x'); pg.click('#btn-convert'); pg.wait_for_selector('.error')
+        check('429' in pg.inner_text('.error') and '7' in pg.inner_text('.error'), 'rate-limit error with retry-after')
+        patch({'apiKeys': {'custom': 'sk-500'}}); pg.fill('#input', 'x'); pg.click('#btn-convert'); pg.wait_for_selector('.error')
+        check('5xx' in pg.inner_text('.error'), 'server error message')
+        patch({'apiKeys': {'custom': 'sk-slow'}, 'timeoutSec': 5}); pg.fill('#input', 'x'); pg.click('#btn-convert'); pg.wait_for_selector('.error', timeout=12000)
+        check('超时' in pg.inner_text('.error'), 'idle timeout error')
+        patch(BASE)
+        # stop / abort
+        pg.fill('#input', '停止测试'); pg.click('#btn-convert'); pg.wait_for_timeout(60); pg.click('#btn-convert'); wait_done()
+        check(pg.locator('.error').count() == 0, 'abort shows no error')
+        # Anthropic native API
+        patch({'provider': 'anthropic', 'baseUrl': 'http://127.0.0.1:8787/v1', 'model': 'claude-test', 'apiKeys': {'anthropic': 'sk-test'}})
+        convert_text('anthropic test')
+        h = last_headers(); b2 = last_req()
+        check(h.get('x-api-key') == 'sk-test' and h.get('anthropic-version') and 'system' in b2 and all(m['role'] != 'system' for m in b2['messages']), 'Anthropic Messages API format')
+        check('输出格式' in pg.inner_text('#output'), 'Anthropic streaming parsed')
+        # local provider without key
+        patch({'provider': 'ollama', 'baseUrl': 'http://127.0.0.1:8787/nokey/v1', 'model': 'qwen2.5:7b', 'apiKeys': {}})
+        check(pg.locator('.banner').count() == 0, 'no key banner for local provider')
+        convert_text('ollama test'); check('输出格式' in pg.inner_text('#output'), 'local provider works without key')
+        patch(BASE)
+        # settings: providers, fetch models, profiles
+        pg.click('#btn-settings'); pg.wait_for_selector('[data-prov]')
+        names = pg.locator('[data-prov]').all_inner_texts()
+        check(all(any(n in x for x in names) for n in ['Anthropic', 'Gemini', 'Ollama', 'LM Studio', 'OpenRouter', 'SiliconFlow', 'Kimi', 'GLM']), 'new provider presets listed')
+        pg.click('#f-models'); pg.wait_for_function("document.querySelector('#f-models-status').innerText.includes('3')")
+        check(pg.locator('#model-list option').count() == 3, 'model list fetched')
+        pg.fill('#p-name', 'Mock 本地'); pg.click('#p-save'); pg.wait_for_selector('[data-profile]')
+        check(pg.locator('[data-profile]').count() == 1, 'profile saved')
+        pg.click('[data-prov="deepseek"]'); check('deepseek' in pg.input_value('#f-base'), 'switch provider')
+        pg.click('[data-profile]'); check(pg.input_value('#f-base') == 'http://127.0.0.1:8787/v1' and pg.input_value('#f-key') == 'sk-test', 'profile restores endpoint + key')
+        # session-only keys
+        pg.check('#f-session'); pg.wait_for_timeout(100)
+        stored = pg.evaluate("JSON.parse(localStorage.getItem('pc.settings.v1'))")
+        check(not stored['apiKeys'].get('custom') and all(not p['apiKey'] for p in stored['profiles']), 'session keys not written to localStorage')
+        pg.keyboard.press('Escape'); pg.reload(); pg.wait_for_selector('#input')
+        check(pg.locator('.banner').count() == 0, 'session key survives reload in same tab')
+        pg.click('#btn-settings'); pg.uncheck('#f-session'); pg.keyboard.press('Escape')
+        # accessibility: focus trap + restore
+        pg.click('#btn-keys'); pg.wait_for_selector('#keys-table')
+        for _ in range(4): pg.keyboard.press('Tab')
+        check(pg.evaluate("!!document.activeElement.closest('.modal')"), 'focus trapped in dialog')
+        pg.keyboard.press('Escape'); pg.wait_for_timeout(50)
+        check(pg.evaluate("document.activeElement && document.activeElement.id") == 'btn-keys', 'focus restored after closing dialog')
+        pg.focus('[data-mode="general"]'); pg.keyboard.press('ArrowRight')
+        check(pg.evaluate("document.activeElement.dataset.mode") == 'coding', 'arrow keys move between mode tabs')
+        # XSS safety
+        evil = {'id': 'evil', 'at': 1800000000000, 'mode': 'general', 'input': '<img src=x onerror="window.__xss=1">', 'output': '<img src=x onerror="window.__xss=1"> [click](javascript:alert(1)) **ok**', 'model': 'm'}
+        pg.evaluate("(e)=>localStorage.setItem('pc.history.v1', JSON.stringify([e]))", evil); pg.reload()
+        pg.click('#btn-history'); pg.click('[data-open="evil"]'); pg.wait_for_timeout(200)
+        check(pg.evaluate("window.__xss === undefined && !document.querySelector('#output img') && !document.querySelector('a[href^=javascript]')"), 'no XSS from rendered content')
+        pg.click('[data-view="diff"]'); pg.wait_for_timeout(100)
+        check(pg.evaluate("window.__xss === undefined && !document.querySelector('.diffview img')"), 'no XSS in diff view')
+        pg.click('[data-view="single"]')
+        # mobile layout
+        m = ctx.new_page(); m.set_viewport_size({'width': 390, 'height': 844}); m.goto('http://127.0.0.1:4174/'); m.wait_for_selector('#input')
+        cols = m.evaluate("getComputedStyle(document.querySelector('.grid')).gridTemplateColumns.split(' ').length")
+        check(cols == 1, 'single-column layout on mobile')
+        check(m.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), 'no horizontal overflow on mobile')
+        m.fill('#input', '帮我写个python脚本批量重命名图片'); m.click('#btn-convert'); m.wait_for_selector('#output'); m.wait_for_function("!document.querySelector('.card.busy')")
+        m.screenshot(path=os.path.join(ROOT, 'docs/mobile.png'), full_page=False)
+        m.close()
+        # PWA
+        check(pg.locator('link[rel=manifest]').count() == 1, 'manifest linked')
+        ok_sw = pg.evaluate("navigator.serviceWorker.getRegistration().then(r => !!r)")
+        if not ok_sw:
+            pg.wait_for_timeout(1500); ok_sw = pg.evaluate("navigator.serviceWorker.getRegistration().then(r => !!r)")
+        check(ok_sw, 'service worker registered (offline-capable)')
+        man = pg.evaluate("fetch('./manifest.webmanifest').then(r=>r.json())")
+        check(len(man['icons']) >= 2 and man['display'] == 'standalone', 'manifest valid')
+        check(pg.evaluate("!!document.querySelector('meta[http-equiv=Content-Security-Policy]')"), 'CSP meta present')
+        patch({'theme': 'light'})
+        convert_text('帮我写个python脚本批量重命名图片')
+        pg.screenshot(path=os.path.join(ROOT, 'docs/screenshot.png'))
         pg.click('#btn-lang'); check('Prompt Converter' in pg.inner_text('h1'), 'English toggle')
         pg.click('#btn-lang')
         # dark screenshot
