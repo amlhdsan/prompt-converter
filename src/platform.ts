@@ -38,10 +38,10 @@ export const hideQuick = () => invoke<void>('hide_quick');
 export const showMain = () => invoke<void>('show_main');
 
 /** Subscribe to a Tauri event (no-op on web). */
-export async function onEvent(name: string, cb: () => void) {
+export async function onEvent<T = unknown>(name: string, cb: (payload: T) => void) {
   if (!isDesktop) return;
   const { listen } = await import('@tauri-apps/api/event');
-  await listen(name, cb);
+  await listen<T>(name, (e) => cb(e.payload));
 }
 
 /** Convert a KeyboardEvent into a Tauri accelerator string, e.g. "CommandOrControl+Shift+Space". Returns '' for bare modifiers. */
@@ -54,10 +54,16 @@ export function eventToAccelerator(e: KeyboardEvent): string {
   if (e.shiftKey) parts.push('Shift');
   if (!parts.length) return '';
   const code = e.code;
-  let key = code.startsWith('Key') ? code.slice(3) : code.startsWith('Digit') ? code.slice(5) : code === 'Space' ? 'Space' : /^F\d+$/.test(code) ? code : k.length === 1 ? k.toUpperCase() : code;
+  const key = code.startsWith('Key') ? code.slice(3) : code.startsWith('Digit') ? code.slice(5) : code === 'Space' ? 'Space' : /^F\d+$/.test(code) ? code : k.length === 1 ? k.toUpperCase() : code;
   parts.push(key);
   return parts.join('+');
 }
 export const prettyAccel = (a: string) => a.replace('CommandOrControl', modKey).replace(/\+/g, ' + ');
 /** Desktop: hide the quick window and paste (Ctrl/⌘+V) into the app that was focused before it. */
 export const pasteBack = () => invoke<void>('paste_back');
+
+/** Desktop: global hotkey that failed to register at startup ('' if fine). */
+export async function hotkeyStatus(): Promise<string> {
+  if (!isDesktop) return '';
+  try { const { invoke } = await import('@tauri-apps/api/core'); return (await invoke<string>('hotkey_status')) || ''; } catch { return ''; }
+}
