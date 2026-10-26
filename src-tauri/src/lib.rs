@@ -7,7 +7,7 @@ use std::sync::{
 };
 
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
@@ -16,12 +16,26 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 pub const DEFAULT_HOTKEY: &str = "CommandOrControl+Shift+Space";
 const HOTKEY_FILE: &str = "hotkey.txt";
+pub const DEFAULT_SEL_HOTKEY: &str = "CommandOrControl+Alt+Space";
+const SEL_HOTKEY_FILE: &str = "selection-hotkey.txt";
+/// Built-in modes offered in the tray "Mode" submenu (id, zh, en).
+const TRAY_MODES: [(&str, &str, &str); 5] = [
+    ("general", "通用", "General"),
+    ("coding", "编程", "Coding"),
+    ("writing", "写作", "Writing"),
+    ("analysis", "分析 / 研究", "Analysis"),
+    ("image", "图像生成", "Image"),
+];
 
 struct AppState {
     hotkey: Mutex<String>,
     /// Accelerator that failed to register at startup ("" when fine); shown as a banner by the UI.
     hotkey_error: Mutex<String>,
     autostart_item: Mutex<Option<CheckMenuItem<tauri::Wry>>>,
+    /// "Convert selection" accelerator ("" = disabled).
+    sel_hotkey: Mutex<String>,
+    /// Main-window size/position saved before entering mini mode.
+    mini_restore: Mutex<Option<(tauri::PhysicalSize<u32>, tauri::PhysicalPosition<i32>)>>,
 }
 
 /// Lock that survives poisoning: a panic in one command must not brick every later call.
@@ -209,6 +223,111 @@ async fn paste_back(app: AppHandle) -> Result<(), String> {
     .map_err(|_| "paste thread panicked".to_string())?
 }
 
+fn sel_hotkey_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join(SEL_HOTKEY_FILE))
+}
+
+fn register_sel_hotkey(app: &AppHandle, accel: &str) -> Result<(), String> {
+    let gs = app.global_shortcut();
+    let state = app.state::<AppState>();
+    let mut cur = lock(&state.sel_hotkey);
+    let old = cur.parse::<Shortcut>().ok();
+    if let Some(o) = old {
+        let _ = gs.unregister(o);
+    }
+    if accel.trim().is_empty() {
+        cur.clear();
+        return Ok(());
+    }
+    let sc: Shortcut = accel.parse().map_err(|e| format!("invalid shortcut: {e}"))?;
+    if lock(&state.hotkey).parse::<Shortcut>().ok() == Some(sc) {
+        if let Some(o) = old { let _ = gs.register(o); }
+        return Err("same as the quick-convert hotkey".into());
+    }
+    if let Err(e) = gs.register(sc) {
+        if let Some(o) = old { let _ = gs.register(o); }
+        return Err(e.to_string());
+    }
+    *cur = accel.to_string();
+    Ok(())
+}
+
+#[tauri::command]
+fn set_selection_hotkey(app: AppHandle, accel: String) -> Result<(), String> {
+    register_sel_hotkey(&app, &accel)?;
+    if let Some(p) = sel_hotkey_path(&app) {
+        if let Some(dir) = p.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(p, if accel.trim().is_empty() { "-" } else { accel.as_str() });
+    }
+    Ok(())
+}
+
+/// Copy the selection of the focused app (release held modifiers, then Ctrl/⌘+C), then show the quick
+/// window, which reads the clipboard and converts it.
+fn convert_selection(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let copied = (|| -> Result<(), String> {
+            use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+            let mut e = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+            for k in [Key::Alt, Key::Shift, Key::Control, Key::Meta] {
+                let _ = e.key(k, Direction::Release);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(60));
+            #[cfg(target_os = "macos")]
+            let modifier = Key::Meta;
+            #[cfg(not(target_os = "macos"))]
+            let modifier = Key::Control;
+            e.key(modifier, Direction::Press).map_err(|e| e.to_string())?;
+            e.key(Key::Unicode('c'), Direction::Click).map_err(|e| e.to_string())?;
+            e.key(modifier, Direction::Release).map_err(|e| e.to_string())?;
+            Ok(())
+        })();
+        if let Err(e) = copied {
+            eprintln!("[prompt-converter] copy selection failed: {e}");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(160));
+        let h = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Ok(w) = quick_window(&h) {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_always_on_top(true);
+                let _ = w.set_focus();
+                let _ = w.emit_to("quick", "quick-selection", ());
+            }
+        });
+    });
+}
+
+/// Compact always-on-top main window ("mini mode").
+#[tauri::command]
+fn set_mini(app: AppHandle, on: bool) -> Result<(), String> {
+    let w = app.get_webview_window("main").ok_or("main window missing")?;
+    let state = app.state::<AppState>();
+    let mut saved = lock(&state.mini_restore);
+    if on {
+        if saved.is_none() {
+            if let (Ok(s), Ok(p)) = (w.inner_size(), w.outer_position()) {
+                *saved = Some((s, p));
+            }
+        }
+        let scale = w.scale_factor().unwrap_or(1.0);
+        w.set_always_on_top(true).map_err(|e| e.to_string())?;
+        let _ = w.set_size(tauri::PhysicalSize::new((440.0 * scale) as u32, (600.0 * scale) as u32));
+    } else {
+        w.set_always_on_top(false).map_err(|e| e.to_string())?;
+        if let Some((s, p)) = saved.take() {
+            let _ = w.set_size(s);
+            let _ = w.set_position(p);
+        }
+    }
+    let _ = w.emit_to("main", "mini", on);
+    Ok(())
+}
+
 #[tauri::command]
 fn write_text_file(path: String, contents: String) -> Result<(), String> {
     // Write to a temp file then rename, so a crash mid-write never leaves a truncated backup.
@@ -231,7 +350,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", if zh { "退出" } else { "Quit" }, true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &quick, &sep, &autostart, &sep2, &quit])?;
+    let mode_items = TRAY_MODES
+        .iter()
+        .map(|(id, z, e)| MenuItem::with_id(app, format!("mode:{id}"), if zh { *z } else { *e }, true, None::<&str>))
+        .collect::<tauri::Result<Vec<_>>>()?;
+    let mode_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = mode_items.iter().map(|m| m as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
+    let modes = Submenu::with_items(app, if zh { "转换场景" } else { "Mode" }, true, &mode_refs)?;
+    let mini = MenuItem::with_id(app, "mini", if zh { "迷你置顶模式" } else { "Mini always-on-top" }, true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quick, &modes, &mini, &sep, &autostart, &sep2, &quit])?;
     *lock(&app.state::<AppState>().autostart_item) = Some(autostart.clone());
 
     let mut tray = TrayIconBuilder::with_id("main");
@@ -249,6 +375,15 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 let _ = apply_autostart(app, want);
             }
             "quit" => app.exit(0),
+            "mini" => {
+                show_main_window(app);
+                let on = lock(&app.state::<AppState>().mini_restore).is_none();
+                let _ = set_mini(app.clone(), on);
+            }
+            id if id.starts_with("mode:") => {
+                let mode = id.trim_start_matches("mode:").to_string();
+                let _ = app.emit("set-mode", mode);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, ev| {
@@ -282,15 +417,21 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _sc, ev| {
-                    if ev.state() == ShortcutState::Pressed {
+                .with_handler(|app, sc, ev| {
+                    if ev.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    let is_sel = lock(&app.state::<AppState>().sel_hotkey).parse::<Shortcut>().ok().as_ref() == Some(sc);
+                    if is_sel {
+                        convert_selection(app);
+                    } else {
                         toggle_quick(app);
                     }
                 })
                 .build(),
         )
-        .manage(AppState { hotkey: Mutex::new(String::new()), hotkey_error: Mutex::new(String::new()), autostart_item: Mutex::new(None) })
-        .invoke_handler(tauri::generate_handler![set_hotkey, hotkey_status, get_autostart, set_autostart, hide_quick, show_main, write_text_file, paste_back])
+        .manage(AppState { hotkey: Mutex::new(String::new()), hotkey_error: Mutex::new(String::new()), autostart_item: Mutex::new(None), sel_hotkey: Mutex::new(String::new()), mini_restore: Mutex::new(None) })
+        .invoke_handler(tauri::generate_handler![set_hotkey, hotkey_status, get_autostart, set_autostart, hide_quick, show_main, write_text_file, paste_back, set_selection_hotkey, set_mini])
         .setup(|app| {
             let handle = app.handle().clone();
             install_panic_hook(&handle);
@@ -308,6 +449,15 @@ pub fn run() {
                     eprintln!("[prompt-converter] no global hotkey available; the app still works via the tray");
                 }
                 let _ = handle.emit("hotkey-failed", saved.clone());
+            }
+            let sel = sel_hotkey_path(&handle)
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|| DEFAULT_SEL_HOTKEY.to_string());
+            if sel != "-" {
+                if let Err(e) = register_sel_hotkey(&handle, &sel) {
+                    eprintln!("[prompt-converter] selection hotkey {sel} unavailable: {e}");
+                }
             }
             if let Err(e) = build_tray(&handle) {
                 eprintln!("[prompt-converter] tray unavailable: {e}");

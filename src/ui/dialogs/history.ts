@@ -1,5 +1,5 @@
-import { clearHistory, deleteHistory, loadHistory, toggleFav } from '../../storage';
-import { closeModal, esc, modal } from '../dom';
+import { clearHistory, deleteHistory, loadHistory, saveHistory, toggleFav } from '../../storage';
+import { closeModal, esc, modal, undoToast } from '../dom';
 import { allModes, modeLabel } from '../actions';
 import { icons } from '../icons';
 import { persist, st, t } from '../state';
@@ -37,7 +37,7 @@ export function openHistory() {
       }).join('') : `<div class="placeholder">${all.length ? d.noMatch : d.noHistory}</div>`;
       root.querySelector('#h-foot')!.innerHTML = all.length ? `<button class="ghost" id="h-export">${icons.download} ${d.exportHistoryMd}</button><button class="ghost danger" id="h-clear">${d.clearHistory}</button>` : '';
       root.querySelector('#h-export')?.addEventListener('click', exportHistoryMd);
-      root.querySelector('#h-clear')?.addEventListener('click', () => { clearHistory(); draw(); });
+      root.querySelector('#h-clear')?.addEventListener('click', () => { const snap = loadHistory(); clearHistory(); draw(); undoToast(t().x.cleared, () => { saveHistory(snap); draw(); }); });
       for (const [id, v] of [['h-tab-all', 'all'], ['h-tab-fav', 'fav']] as const) {
         const b = root.querySelector('#' + id)!; b.className = tab === v ? 'on' : ''; b.setAttribute('aria-selected', String(tab === v));
       }
@@ -45,7 +45,7 @@ export function openHistory() {
     list.addEventListener('click', (e) => {
       const tgt = e.target as HTMLElement;
       const fav = tgt.closest<HTMLElement>('[data-fav]'); if (fav) { toggleFav(fav.dataset.fav!); draw(); (root.querySelector(`[data-fav="${CSS.escape(fav.dataset.fav!)}"]`) as HTMLElement)?.focus(); return; }
-      const del = tgt.closest<HTMLElement>('[data-del]'); if (del) { deleteHistory(del.dataset.del!); draw(); return; }
+      const del = tgt.closest<HTMLElement>('[data-del]'); if (del) { const snap = loadHistory(); deleteHistory(del.dataset.del!); draw(); undoToast(t().x.wsDeleted, () => { saveHistory(snap); draw(); }); return; }
       const el = tgt.closest<HTMLElement>('.hist-item'); if (!el) return;
       const it = loadHistory().find((x) => x.id === el.dataset.id); if (!it) return;
       st.input = it.input; st.outputs = [it.output]; st.active = 0; st.error = '';
