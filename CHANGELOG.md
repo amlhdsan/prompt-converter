@@ -2,6 +2,35 @@
 
 All notable changes are documented here. Format based on [Keep a Changelog](https://keepachangelog.com/), versions follow [SemVer](https://semver.org/).
 
+## [1.5.0] - 2026-10-26
+
+### Added — usability
+- **Onboarding**: provider → API key → connection test → sample conversion; re-runnable from Settings. **Demo mode** with canned outputs works without a key.
+- **Input**: autosaved draft (restored on reload), undo/redo (`Ctrl/⌘+Z`, `Ctrl/⌘+Shift+Z`) grouped per typing pause, drag-and-drop text files (≤ 2 MB), character/token counter, smart mode suggestion chip, **Convert & copy** split button (`Ctrl/⌘+Shift+Enter`).
+- **Feedback**: skeleton + elapsed time / speed while generating, empty state with tips and a gallery shortcut, **undo toasts** for clear, history delete/clear, library delete, stats clear and toolbox edits.
+- **Settings**: Basic / All views (remembered) and a search box; appearance options (accent color, text size, compact layout, reduce motion — also honours `prefers-reduced-motion`); behaviour options (auto-suggest mode, auto-copy, demo mode, usage stats).
+- Header **Tools** menu (palette, toolbox, compare, chat, batch, gallery, stats, sync, mini mode).
+
+### Added — features
+- **Prompt library**: tags, folders, search (`#tag`), star, sort by updated / title / uses, reuse; **version history** per prompt with diff and restore. `Ctrl/⌘+S` saves the result, `Ctrl/⌘+Shift+L` opens it.
+- **Multi-model compare** (up to 4 columns from saved profiles or extra model names), with latency/token meta and "use this result".
+- **Chat mode** using the converted prompt as the system prompt (streaming, copy, export Markdown).
+- **Techniques toolbox**: chain of thought, few-shot examples, role builder, JSON Schema output, explain prompt, structure-preserving translation (checks headings / code blocks / variables), image presets for Midjourney / Stable Diffusion / DALL·E.
+- **Template gallery**: 4 bundled packs (15 templates), import packs by URL or JSON.
+- **Usage dashboard**: calls, success rate, estimated tokens and cost, latency, streak, per-day chart, by model / feature, CSV export (local only, can be disabled).
+- **Sync** to your own WebDAV or a private GitHub Gist (merge by id, newest wins; API keys excluded unless opted in).
+- **Chrome MV3 extension** built from the shared core: popup quick convert + settings, context-menu conversion on any page, ✨ button on ChatGPT / Claude / Gemini / DeepSeek / Kimi. Zip attached to each release.
+- **Desktop**: global convert-selection hotkey (`Ctrl/⌘+Alt+Space`, configurable / can be disabled), tray **Mode** submenu, **mini always-on-top** mode (tray or Tools menu).
+- UI strings for every new feature in 中文 / English / 日本語.
+
+### Fixed
+- Dialogs and toasts no longer disappear when the app re-renders behind them (e.g. installing a template).
+- Header pop-up menus open downwards.
+
+### Tests
+- 97 unit tests (30 new for detection, undo, workspace, techniques, image prompts, gallery packs, stats, sync, demo).
+- E2E grows to 152 checks (onboarding, demo, undo/redo, drafts, drag-and-drop, convert & copy, library + versions, compare, chat, toolbox, gallery URL import, stats, WebDAV + Gist sync against a mock, settings search/appearance); new extension smoke test in CI.
+
 ## [1.4.0] - 2026-10-24
 
 ### Added

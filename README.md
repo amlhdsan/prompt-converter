@@ -91,10 +91,15 @@ npx tauri build --bundles deb,appimage     # 仅构建 Linux 包
 | `Ctrl/⌘ + ,` | 打开设置 |
 | `Ctrl/⌘ + Shift + H` | 打开历史记录 |
 | `Ctrl/⌘ + Shift + T` | 管理模板 |
+| `Ctrl/⌘ + Shift + Enter` | 转换并复制结果 |
+| `Ctrl/⌘ + S` | 保存结果到提示词库 |
+| `Ctrl/⌘ + Shift + L` | 打开提示词库 |
+| `Ctrl/⌘ + Z` / `Ctrl/⌘ + Shift + Z` | 输入框撤销 / 重做 |
 | `Alt + 1…9` | 切换到第 N 个场景 |
 | `?` | 快捷键帮助 |
 | `Esc` | 关闭弹窗 / 停止转换 / 隐藏悬浮窗 |
 | `Ctrl/⌘ + Shift + Space` | （桌面版，全局）呼出 / 隐藏快速转换悬浮窗，可在设置中修改 |
+| `Ctrl/⌘ + Alt + Space` | （桌面版，全局）**划词转换**：复制任意应用中选中的文字并在悬浮窗中转换，可修改或关闭 |
 
 ## 📸 截图 / Screenshots
 
@@ -105,6 +110,18 @@ npx tauri build --bundles deb,appimage     # 仅构建 Linux 包
 | 自定义模板 Templates | 快速转换悬浮窗 Quick window |
 | --- | --- |
 | ![templates](docs/templates.png) | ![quick](docs/quick-window.png) |
+
+| 新手引导 Onboarding | 提示词库 Library |
+| --- | --- |
+| ![onboarding](docs/onboarding.png) | ![workspace](docs/workspace.png) |
+
+| 多模型对比 Compare | 模板市场 Gallery |
+| --- | --- |
+| ![compare](docs/compare.png) | ![gallery](docs/gallery.png) |
+
+| 使用统计 Stats | 浏览器扩展 Extension |
+| --- | --- |
+| ![stats](docs/stats.png) | ![extension](docs/extension-popup.png) |
 
 ## 🔄 更新 / Updating
 
@@ -136,6 +153,21 @@ git pull && docker compose up -d --build
 
 ## 🌟 功能
 
+**v1.5 新增：更好上手，更多功能**
+
+- 👋 **新手引导**：选服务商 → 填 Key → 测试连接 → 跑一次示例，一分钟完成；没有 Key 也能先用 **演示模式** 体验全部界面
+- ✍️ **输入体验**：草稿自动保存、撤销 / 重做、拖入 `.txt/.md` 等文本文件、字数与 token 计数、根据输入**自动推荐场景**、**一键转换并复制**；生成时显示骨架屏、耗时与速度；清空 / 删除都可「撤销」
+- ⚙️ **设置更简单**：常用 / 全部 两档视图 + 设置搜索；外观可选强调色、字号、紧凑布局、减少动画
+- 📚 **提示词库**：标签、文件夹、搜索、星标、按使用次数排序，每条提示词有**版本历史**（对比差异、一键恢复）
+- 🆚 **多模型对比**：同一输入同时发给多个配置 / 模型，并排比较耗时与结果
+- 💬 **对话模式**：直接用转换后的提示词作为 system prompt 与模型多轮对话，可导出
+- 🧰 **技巧工具箱**：思维链、少样本示例、角色设定、JSON Schema 输出、提示词解析、保持结构的翻译、Midjourney / Stable Diffusion / DALL·E 参数
+- 🧩 **模板市场**：内置 4 个模板包（15 个模板）一键安装，也可通过 URL 或 JSON 导入别人分享的模板包
+- 📊 **使用统计**：调用次数、成功率、Token 与费用估算、平均耗时、按模型 / 功能分布、每日趋势（仅存本机，可关闭、导出 CSV）
+- ☁️ **云同步**：同步到你自己的 WebDAV（坚果云、Nextcloud…）或私有 GitHub Gist，按 ID 合并，默认不同步 API Key
+- 🧩 **Chrome 浏览器扩展**：右键「转换为结构化提示词」，在 ChatGPT / Claude / Gemini / DeepSeek / Kimi 输入框旁一键 ✨ 优化（见下文）
+- 🖥️ **桌面版**：划词转换全局快捷键、托盘菜单切换场景、迷你置顶模式
+
 **v1.4 新增**
 
 - 🧰 **命令面板** `Ctrl/⌘ + K`：模糊搜索所有操作、场景和对话框
@@ -160,6 +192,16 @@ git pull && docker compose up -d --build
 - 🖥️ **桌面版**：全局快捷键悬浮窗、剪贴板读写、托盘、开机自启（见上文）
 - 🌗 浅色 / 深色 / 跟随系统；🇨🇳 中文界面默认，可切换 English
 - 🩺 **清晰的错误提示**：认证失败、跨域（CORS）、网络错误、接口错误分别提示
+
+## 🧩 浏览器扩展 / Browser extension
+
+从 [Releases](https://github.com/amlhdsan/prompt-converter/releases) 下载 `prompt-converter-extension-x.y.z.zip`，解压后在 `chrome://extensions` 打开「开发者模式」→「加载已解压的扩展程序」选择该目录（Edge / Brave 等 Chromium 浏览器同理）。也可以自己构建：`npm run build:ext`（输出到 `dist-ext/`）。
+
+- 点击工具栏图标：快速转换 + 设置（服务商、Key、模型、输出语言；Key 只存在 `chrome.storage.local`）
+- 任意网页选中文字 → 右键「✨ 转换为结构化提示词」，结果卡片可复制或替换输入框
+- 在 ChatGPT / Claude / Gemini / DeepSeek / Kimi 的输入框旁出现「✨ 优化提示词」按钮，原地改写
+
+Download the extension zip from Releases, unzip, then load it via `chrome://extensions` → Developer mode → Load unpacked. Popup quick convert + settings, right-click any selection, and a ✨ button next to the chat box on popular AI sites. It reuses the app's conversion core.
 
 ## 🔒 隐私说明
 
@@ -245,6 +287,8 @@ Open ⚙️ Settings, pick a provider (DeepSeek / OpenAI / Qwen DashScope / cust
 
 Five built-in modes (general, coding, writing, analysis/research, image generation) plus **your own custom templates** (create / edit / delete, stored locally) · streaming · output language (auto, 10 presets, or any custom language) · compare view · one-click copy · local history with **search and favorites** · **import/export** of settings, templates and history as JSON · **keyboard shortcuts** (`Ctrl/⌘ + Enter` to convert, press `?` for the full list) · dark/light/system theme · Chinese UI with English toggle · clear CORS/auth/network errors.
 
+**New in 1.5:** guided onboarding (provider → key → connection test → sample) and a no-key **demo mode**; autosaved drafts, undo/redo, drag-and-drop text files, character/token counter, smart mode suggestion, one-click convert & copy, progress skeleton, undo for destructive actions; simpler Settings (basic/all + search) with accent color, text size, compact layout and reduced motion; a **prompt library** with tags, folders, stars, search and per-prompt **version history**; **multi-model compare**; **chat** with the converted prompt as the system prompt; a **techniques toolbox** (chain of thought, few-shot, role, JSON schema, explain, structure-preserving translate, Midjourney/SD/DALL·E params); a **template gallery** (bundled packs + import by URL/JSON); a local **usage dashboard**; **WebDAV / GitHub Gist sync**; a **Chrome extension**; desktop convert-selection hotkey (`Ctrl/⌘+Alt+Space`), tray mode menu and mini always-on-top mode.
+
 **New in 1.4:** command palette (`Ctrl/⌘+K`), batch convert (one prompt per line or `---`-separated, export as Markdown), fill-in form for `[TODO: …]` placeholders, editable instructions for built-in modes, provider connection test, history export as Markdown, Japanese UI. Stability: automatic retry with backoff for transient errors (before any output arrives, honours Retry-After, last attempt falls back to non-streaming), partial output kept when a stream stalls, requests aborted on navigation, global error boundary with recovery screen and a copyable local error log, versioned storage with migrations, corruption recovery, quota fallback and multi-tab sync. Desktop: debounced window-state saving, single instance, hotkey-failure banner, panic-safe Rust shell.
 
 ### Desktop app
@@ -260,7 +304,7 @@ Built with Tauri v2 for Windows, macOS and Linux — download from [Releases](ht
 
 ### Shortcuts
 
-`Ctrl/⌘+Enter` convert/stop · `Ctrl/⌘+K` command palette · `Ctrl/⌘+Shift+B` batch convert · `Ctrl/⌘+Shift+C` copy result · `Ctrl/⌘+,` settings · `Ctrl/⌘+Shift+H` history · `Ctrl/⌘+Shift+T` templates · `Alt+1…9` switch mode · `?` help · `Esc` close/stop · desktop global: `Ctrl/⌘+Shift+Space`.
+`Ctrl/⌘+Enter` convert/stop · `Ctrl/⌘+Shift+Enter` convert & copy · `Ctrl/⌘+S` save to library · `Ctrl/⌘+Shift+L` library · `Ctrl/⌘+K` command palette · `Ctrl/⌘+Shift+B` batch convert · `Ctrl/⌘+Shift+C` copy result · `Ctrl/⌘+,` settings · `Ctrl/⌘+Shift+H` history · `Ctrl/⌘+Shift+T` templates · `Alt+1…9` switch mode · `?` help · `Esc` close/stop · desktop global: `Ctrl/⌘+Shift+Space` (quick window), `Ctrl/⌘+Alt+Space` (convert selection).
 
 ### Privacy
 
@@ -268,6 +312,15 @@ Your API key, templates and history are stored **only locally** (browser / deskt
 
 ### Roadmap
 
-Replace-selection in other apps · in-app auto-update (needs a signing key) · browser extension · optional GitHub Pages demo.
+In-app auto-update (needs a signing key) · Firefox extension · optional GitHub Pages demo.
 
 License: MIT
+
+## 日本語
+
+**Prompt Converter** は、思いつきの一文を、役割・目標・制約・手順・出力形式を備えた構造化プロンプトに変換するツールです（自分の API キーを使用、バックエンドなし）。UI は 日本語 / 中文 / English に対応。
+
+- 初回ガイド（プロバイダー → キー → 接続テスト → サンプル）と、キー不要のデモモード
+- プロンプトライブラリ（タグ・フォルダー・スター・バージョン履歴）、複数モデル比較、チャット、テクニック工具箱、テンプレートギャラリー、利用統計、WebDAV / Gist 同期
+- デスクトップ版（Windows / macOS / Linux）と Chrome 拡張機能は [Releases](https://github.com/amlhdsan/prompt-converter/releases) から
+- 起動：`npm install && npm run dev` → http://localhost:5173

@@ -501,3 +501,6 @@ html[data-font=sm] { font-size: 14px; } html[data-font=lg] { font-size: 17px; } 
 @media (max-width: 640px) { .ver-layout, .stats-cols, .shot { grid-template-columns: 1fr; } .cmp-grid { grid-template-columns: 1fr; } .split-r { display: none; } }
 #toast.show:has(#toast-action) { pointer-events: auto; }
 header .menu { position: relative; } header .menu-pop { top: 42px; bottom: auto; }
+.kpi { display: flex; flex-direction: column; gap: 2px; } .kpi-n { display: block; }
+.chart rect { fill: var(--accent); stroke: none; } .chart text { font-size: 10px; fill: var(--text-3); }
+.stats-cols table { width: 100%; border-collapse: collapse; font-size: 13px; } .stats-cols td { padding: 5px 4px; border-bottom: 1px solid var(--separator); }
