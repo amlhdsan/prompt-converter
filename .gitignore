@@ -4,3 +4,5 @@ dist/
 *.log
 .env*
 src-tauri/target/
+dist-ext/
+prompt-converter-extension-*.zip

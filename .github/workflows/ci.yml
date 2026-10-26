@@ -42,6 +42,14 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: E2E tests
         run: python tests/e2e.py
+      - name: Browser extension (build + smoke test)
+        run: |
+          node extension/build.mjs --zip
+          python tests/e2e_ext.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-extension
+          path: prompt-converter-extension-*.zip
       - name: Upload screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4

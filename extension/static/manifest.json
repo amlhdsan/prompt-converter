@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Prompt Converter · 提示词转换器",
+  "short_name": "Prompt Converter",
+  "version": "0.0.0",
+  "description": "Turn rough ideas into structured prompts — right-click any selection or use the ✨ button on ChatGPT / Claude / Gemini. BYOK.",
+  "icons": { "192": "icon-192.png", "512": "icon-512.png" },
+  "action": { "default_popup": "popup.html", "default_title": "Prompt Converter" },
+  "options_page": "popup.html#settings",
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["storage", "contextMenus", "scripting", "activeTab", "clipboardWrite"],
+  "host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "content_scripts": [{
+    "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*", "https://gemini.google.com/*", "https://chat.deepseek.com/*", "https://www.kimi.com/*", "https://kimi.moonshot.cn/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}
