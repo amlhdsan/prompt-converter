@@ -1,0 +1,21 @@
+// No-key demo mode: canned, realistic conversions so first-time users can see what the app does.
+import type { Mode } from '../prompts';
+export const DEMO_OUTPUTS: Record<Mode, { zh: string; en: string }> = {
+  general: { zh: '## 角色\n你是一名经验丰富的旅行规划师。\n\n## 目标\n为用户规划一次 [请补充：天数] 天的 [请补充：目的地] 旅行。\n\n## 背景\n- 出行人数与预算：[请补充]\n- 偏好：美食、轻度徒步\n\n## 约束\n- 每天行程不超过 3 个主要景点\n- 给出交通方式与预计花费\n\n## 输出格式\n按天列出：上午 / 下午 / 晚上，最后附预算表。', en: '## Role\nYou are an experienced travel planner.\n\n## Goal\nPlan a [TODO: number of days]-day trip to [TODO: destination].\n\n## Context\n- Travellers and budget: [TODO]\n- Preferences: food, light hiking\n\n## Constraints\n- At most 3 main sights per day\n- Include transport options and estimated costs\n\n## Output format\nDay by day (morning / afternoon / evening), followed by a budget table.' },
+  coding: { zh: '## 角色\n你是一名资深 Python 工程师。\n\n## 目标\n编写一个脚本，按拍摄日期（EXIF）批量重命名目录中的照片。\n\n## 需求\n- 支持 JPG / PNG / HEIC\n- 命名格式：`YYYY-MM-DD_HHMMSS.ext`，重名追加序号\n- 提供 `--dry-run` 预览\n\n## 约束\n- Python 3.10+，仅使用标准库与 Pillow\n- 完善的错误处理与日志\n\n## 输出格式\n完整代码 + 使用示例 + 依赖安装命令。', en: '## Role\nYou are a senior Python engineer.\n\n## Goal\nWrite a script that bulk-renames photos in a folder by their EXIF capture date.\n\n## Requirements\n- JPG / PNG / HEIC\n- Name format `YYYY-MM-DD_HHMMSS.ext`, append a counter on collisions\n- `--dry-run` preview\n\n## Constraints\n- Python 3.10+, standard library + Pillow only\n- Robust error handling and logging\n\n## Output format\nFull code + usage example + install command.' },
+  writing: { zh: '## 角色\n你是一名擅长生活方式内容的小红书博主。\n\n## 目标\n为新开业的 [请补充：店名] 咖啡店写一篇探店笔记。\n\n## 受众与语气\n20–30 岁城市白领；亲切、有画面感，适度使用 emoji。\n\n## 要点\n- 招牌饮品与口感\n- 空间设计与拍照点\n- 地址、营业时间、人均\n\n## 输出格式\n吸睛标题 ×3 + 正文（300 字内）+ 5 个话题标签。', en: '## Role\nYou are a lifestyle content creator.\n\n## Goal\nWrite an Instagram post for the opening of [TODO: shop name] coffee shop.\n\n## Audience & tone\nUrban 20–30 year-olds; warm and visual, a few emoji.\n\n## Key points\n- Signature drinks and taste\n- Interior and photo spots\n- Address, hours, price range\n\n## Output format\n3 headline options + caption (under 150 words) + 5 hashtags.' },
+  analysis: { zh: '## 角色\n你是一名前端架构顾问。\n\n## 目标\n对比 React 与 Vue，判断哪个更适合 [请补充：团队人数] 人的小团队。\n\n## 范围\n学习曲线、生态、招聘、性能、长期维护。\n\n## 方法\n1. 明确评估维度与权重\n2. 逐项打分并给出依据\n3. 说明假设与不确定性\n\n## 输出格式\n对比表 + 结论 + 迁移/选型建议。', en: '## Role\nYou are a front-end architecture consultant.\n\n## Goal\nCompare React and Vue for a team of [TODO: team size].\n\n## Scope\nLearning curve, ecosystem, hiring, performance, long-term maintenance.\n\n## Method\n1. Define criteria and weights\n2. Score each with evidence\n3. State assumptions and uncertainties\n\n## Output format\nComparison table + conclusion + recommendation.' },
+  image: { zh: '1) 主提示词：清晨薄雾中的江南古镇，石桥倒映在平静的河面，乌篷船缓缓驶过，柔和的金色侧光，水墨与写实结合，宁静氛围。\n\n2) English keywords: ancient water town at dawn, misty, stone bridge reflection, wooden boat, soft golden side light, ink wash meets realism, serene, 35mm, high detail\n\n3) Negative prompt: blurry, oversaturated, text, watermark, modern buildings\n\n4) 参数建议：--ar 16:9 --v 6.1 --s 250', en: '1) Main prompt: an ancient water town at dawn wrapped in mist, a stone bridge reflected in a calm river, a wooden boat gliding by, soft golden side light, ink-wash style blended with realism, serene mood.\n\n2) Keywords: ancient water town, dawn, mist, stone bridge reflection, wooden boat, golden side light, ink wash, realism, serene, 35mm, high detail\n\n3) Negative prompt: blurry, oversaturated, text, watermark, modern buildings\n\n4) Parameters: --ar 16:9 --v 6.1 --s 250' },
+};
+export const demoOutput = (mode: string, lang: 'zh' | 'en') => (DEMO_OUTPUTS[mode as Mode] ?? DEMO_OUTPUTS.general)[lang];
+
+/** Streams `text` in small chunks to mimic a model, respecting an AbortSignal. */
+export async function fakeStream(text: string, onDelta: (s: string) => void, signal?: AbortSignal, chunk = 8, delay = 12): Promise<string> {
+  let out = '';
+  for (let i = 0; i < text.length; i += chunk) {
+    if (signal?.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    out += text.slice(i, i + chunk); onDelta(out);
+    await new Promise((r) => setTimeout(r, delay));
+  }
+  return out;
+}
