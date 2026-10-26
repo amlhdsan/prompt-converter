@@ -80,6 +80,7 @@ const nextLang = () => UI_LANGS[(UI_LANGS.indexOf(st.s.uiLang) + 1) % UI_LANGS.l
 function renderApp() {
   applyTheme();
   if (isQuick) return renderQuick();
+  const keep = ['modal-root', 'toast'].map((id) => document.getElementById(id));
   const d = t();
   const s = st.s;
   const prov = providerById(s.provider);
@@ -105,7 +106,7 @@ function renderApp() {
             <button role="menuitem" data-menu="batch">${icons.layers} ${d.batch}</button>
             <button role="menuitem" data-menu="gallery">🧩 ${d.x.gallery}</button>
             <button role="menuitem" data-menu="stats">📊 ${d.x.stats}</button>
-            ${s.sync.kind !== 'off' ? `<button role="menuitem" data-menu="sync">☁️ ${d.x.sync}</button>` : ''}
+            <button role="menuitem" data-menu="sync">☁️ ${d.x.sync}</button>
             ${isDesktop ? `<button role="menuitem" data-menu="mini">📌 ${d.x.miniMode}</button>` : ''}
           </div>
         </div>
@@ -211,6 +212,8 @@ function renderApp() {
   <footer>v${APP_VERSION}${isDesktop ? ` · ${d.desktop}` : ''} · MIT © amlhdsan · <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub</a> · ${d.starUs}</footer>
   <div id="modal-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>`;
+  // Keep an open dialog / visible toast alive across re-renders (e.g. installing a template refreshes the mode bar).
+  for (const n of keep) if (n && (n.childElementCount || n.className)) document.getElementById(n.id)?.replaceWith(n);
   bind();
   if (focusId && !modalOpen()) document.getElementById(focusId)?.focus?.();
 }
@@ -235,7 +238,9 @@ function bindDetect() {
   $('#detect-apply')?.addEventListener('click', (e) => setMode((e.currentTarget as HTMLElement).dataset.modeApply!));
   $('#detect-dismiss')?.addEventListener('click', () => { const r = detectMode(st.input); st.dismissedDetect = r?.mode ?? ''; refreshDetect(); });
 }
-function doUndo(redo = false) { const v = redo ? undo.redo() : undo.undo(); if (v === null) return; st.input = v; scheduleDraft(); render(); const ta = $<HTMLTextAreaElement>('#input'); ta?.focus(); ta?.setSelectionRange(v.length, v.length); }
+function syncUndoBtns() { const u = document.getElementById('btn-undo') as HTMLButtonElement | null; const r = document.getElementById('btn-redo') as HTMLButtonElement | null; if (u) u.disabled = !(undo.canUndo || typingTimer); if (r) r.disabled = !undo.canRedo; }
+function flushTyping() { if (typingTimer) { clearTimeout(typingTimer); typingTimer = undefined; } }
+function doUndo(redo = false) { if (!redo) flushTyping(); const v = redo ? undo.redo() : undo.undo(); if (v === null) return; st.input = v; scheduleDraft(); render(); const ta = $<HTMLTextAreaElement>('#input'); ta?.focus(); ta?.setSelectionRange(v.length, v.length); }
 async function readDroppedFile(f: File) {
   if (f.size > 2_000_000) { toast(t().x.dropTooBig); return; }
   if (f.type && !/^text\/|json|xml|javascript|markdown|yaml|csv/.test(f.type) && !/\.(txt|md|markdown|json|csv|ya?ml|xml|html?|js|ts|py|java|go|rs|c|cpp|h|sql|sh|log)$/i.test(f.name)) { toast(t().x.dropUnsupported); return; }
@@ -296,9 +301,9 @@ function bind() {
   const ta = $<HTMLTextAreaElement>('#input');
   ta.addEventListener('input', () => {
     // Group keystrokes into one undo step per pause in typing.
-    if (!typingTimer) undo.push(st.input);
-    clearTimeout(typingTimer); typingTimer = setTimeout(() => { typingTimer = undefined; undo.push(ta.value); }, 700);
-    st.input = ta.value; undo.replace(ta.value);
+    if (!typingTimer) undo.push(ta.value); else undo.replace(ta.value);
+    clearTimeout(typingTimer); typingTimer = setTimeout(() => { typingTimer = undefined; syncUndoBtns(); }, 700);
+    st.input = ta.value; syncUndoBtns();
     $('#in-count').textContent = inCount(); scheduleDraft();
     const ds = $('#draft-state'); if (ds) ds.textContent = '…';
     $('#btn-clear')?.removeAttribute('disabled');
@@ -342,8 +347,6 @@ function bind() {
   $('#btn-examples')?.addEventListener('click', () => openLibrary(focusInput));
   $('#btn-templates').addEventListener('click', () => openTemplates());
   $('#btn-lang').addEventListener('click', () => { st.s.uiLang = nextLang(); persist(); render(); });
-  $('#btn-palette').addEventListener('click', palette);
-  $('#btn-batch').addEventListener('click', openBatch);
   $('#btn-fill')?.addEventListener('click', openFill);
   $('#recovered-dismiss')?.addEventListener('click', () => { recoveredSeen = true; render(); });
   $('#hotkey-fix')?.addEventListener('click', () => { hotkeyIssue = ''; openSettings(); });
@@ -448,7 +451,7 @@ document.addEventListener('keydown', (e) => {
   if (mod && (e.target as HTMLElement)?.id === 'input' && (e.code === 'KeyZ' || e.code === 'KeyY')) {
     // Our own undo stack survives re-renders (the native one doesn't).
     const redo = e.code === 'KeyY' || e.shiftKey;
-    if (redo ? undo.canRedo : (undo.canUndo || typingTimer)) { e.preventDefault(); if (typingTimer) { clearTimeout(typingTimer); typingTimer = undefined; undo.push(st.input); } doUndo(redo); }
+    if (redo ? undo.canRedo : (undo.canUndo || typingTimer)) { e.preventDefault(); doUndo(redo); }
     return;
   }
   if (e.key === 'Escape') {

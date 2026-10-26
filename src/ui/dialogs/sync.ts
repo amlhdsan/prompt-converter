@@ -55,9 +55,9 @@ export function openSync() {
     root.addEventListener('input', save); root.addEventListener('change', save);
     $r('#sy-now').addEventListener('click', async () => {
       save(); const el = $r<HTMLElement>('#sy-status'); const btn = $r<HTMLButtonElement>('#sy-now');
-      el.innerHTML = `<span class="spin"></span>${esc(x.syncing)}`; btn.disabled = true;
-      try { const msg = await syncNow(); el.textContent = '✓ ' + msg; $r('#sy-gid').value = st.s.sync.gistId; toast(msg); rerender(); }
-      catch (e) { el.textContent = '✕ ' + syncError(e); }
+      el.className = 'small muted'; el.innerHTML = `<span class="spin"></span>${esc(x.syncing)}`; btn.disabled = true;
+      try { const msg = await syncNow(); el.textContent = '✓ ' + msg; el.className = 'small ok'; $r('#sy-gid').value = st.s.sync.gistId; toast(msg); rerender(); }
+      catch (e) { el.textContent = '✕ ' + syncError(e); el.className = 'small err'; }
       finally { btn.disabled = false; }
     });
   });

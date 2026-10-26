@@ -1,6 +1,6 @@
 """End-to-end test: serves dist via `vite preview`, mocks an OpenAI-compatible API, drives the UI with Playwright.
 Run: npm run build && python3 tests/e2e.py   (requires: pip install playwright && playwright install chromium)"""
-import subprocess, time, sys, os, json
+import subprocess, time, sys, os, json, re
 from playwright.sync_api import sync_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 mock = subprocess.Popen(['node', 'tests/mock-server.mjs', '8787'], cwd=ROOT)
@@ -28,7 +28,7 @@ try:
         pg.goto('http://127.0.0.1:4174/')
         settings = {'provider': 'custom', 'baseUrl': 'http://127.0.0.1:8787/v1', 'model': 'mock-model', 'apiKeys': {'custom': 'sk-test'}, 'stream': True}
         pg.evaluate(f"localStorage.setItem('pc.settings.v1', JSON.stringify({json.dumps(settings)}))")
-        pg.evaluate("localStorage.setItem('pc.updateApi','http://127.0.0.1:8787'); localStorage.removeItem('pc.update.v1')")
+        pg.evaluate("localStorage.setItem('pc.updateApi','http://127.0.0.1:8787'); localStorage.setItem('pc.setAdv','1'); localStorage.removeItem('pc.update.v1')")
         pg.reload()
         pg.wait_for_selector('#update-notice', timeout=15000)
         check('v9.9.0' in pg.inner_text('#update-notice'), 'update notice shown for newer release')
@@ -389,6 +389,116 @@ try:
         pg.click('#btn-lang'); check('Prompt Converter' in pg.inner_text('h1'), 'English toggle')
         pg.click('#btn-lang'); check(pg.evaluate("document.documentElement.lang") == 'ja' and 'プロンプト' in pg.inner_text('h1'), 'Japanese toggle')
         pg.click('#btn-lang'); check(pg.evaluate("document.documentElement.lang") == 'zh-CN', 'language cycles back to Chinese')
+        # ===== v1.5 =====
+        def tools(item):
+            pg.click('#btn-tools'); pg.click(f'#tools-menu [data-menu="{item}"]'); pg.wait_for_selector('#modal-root .overlay')
+        def close_modal():
+            pg.keyboard.press('Escape'); pg.wait_for_function("!document.querySelector('#modal-root .overlay')")
+        patch({'theme': 'light', 'apiKeys': {'custom': 'sk-test'}, 'baseUrl': 'http://127.0.0.1:8787/v1', 'stream': True})
+        # undo/redo + counter + draft
+        pg.fill('#input', ''); pg.type('#input', 'abc'); pg.fill('#input', 'abcdef'); pg.dispatch_event('#input', 'input')
+        check('6' in pg.inner_text('#in-count'), 'character counter updates')
+        pg.wait_for_timeout(900); pg.reload(); pg.wait_for_selector('#input')
+        check(pg.input_value('#input') == 'abcdef', 'draft restored after reload')
+        pg.fill('#input', 'xyz'); pg.wait_for_timeout(50); pg.click('#btn-undo'); check(pg.input_value('#input') == 'abcdef', 'undo restores previous text')
+        pg.click('#btn-redo'); check(pg.input_value('#input') == 'xyz', 'redo reapplies')
+        # auto-detect chip
+        pg.click('[data-mode="general"]'); pg.fill('#input', '帮我写一个 Python 函数，修复这个 bug 并给出代码'); pg.dispatch_event('#input', 'input'); pg.wait_for_timeout(500)
+        check(pg.locator('#detect-apply').count() == 1, 'auto-detect suggests a mode')
+        pg.click('#detect-apply'); check(pg.get_attribute('[data-mode="coding"]', 'aria-selected') == 'true', 'detect chip switches mode')
+        # drag & drop a text file
+        pg.fill('#input', ''); pg.evaluate("""()=>{const dt=new DataTransfer();dt.items.add(new File(['dropped text 123'],'a.txt',{type:'text/plain'}));const el=document.querySelector('#input');el.dispatchEvent(new DragEvent('dragover',{dataTransfer:dt,bubbles:true}));el.dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true}))}""")
+        pg.wait_for_timeout(300); check(pg.input_value('#input') == 'dropped text 123', 'drag & drop imports a text file')
+        # clear with undo toast
+        pg.click('#btn-clear'); pg.wait_for_selector('#toast-action'); pg.click('#toast-action'); check(pg.input_value('#input') == 'dropped text 123', 'clear is undoable')
+        # convert & copy
+        convert_text('帮我写个python脚本批量重命名图片')
+        pg.fill('#input', '帮我写个python脚本批量重命名图片'); pg.click('#btn-convert-copy'); pg.wait_for_function("!document.querySelector('.card.busy')"); pg.wait_for_timeout(300)
+        check('资深 Python' in pg.evaluate("navigator.clipboard.readText()"), 'convert & copy puts result on clipboard')
+        # workspace
+        pg.keyboard.press('Control+s'); pg.wait_for_timeout(200)
+        n_ws = pg.evaluate("JSON.parse(localStorage.getItem('pc.workspace.v1')||'[]').length"); check(n_ws == 1, 'Ctrl+S saves to library')
+        pg.click('#btn-workspace'); pg.wait_for_selector('#ws-list')
+        check(pg.locator('[data-ws-use]').count() == 1, 'library lists saved prompt')
+        pg.fill('#ws-search', 'zzzqqq'); pg.wait_for_timeout(150); check(pg.locator('[data-ws-use]').count() == 0, 'library search filters')
+        pg.fill('#ws-search', ''); pg.wait_for_timeout(150)
+        pg.click('[data-ws-edit]'); pg.wait_for_selector('#we-body'); pg.fill('#we-body', 'edited body v2'); pg.fill('#we-tags', 'e2e, demo'); pg.click('#we-save'); pg.wait_for_timeout(200)
+        w = pg.evaluate("JSON.parse(localStorage.getItem('pc.workspace.v1'))[0]")
+        check(w['body'] == 'edited body v2' and len(w['versions']) >= 1 and 'e2e' in w['tags'], 'edit creates a version + tags')
+        if pg.locator('#ws-list').count() == 0: pg.click('#btn-workspace'); pg.wait_for_selector('#ws-list')
+        pg.click('[data-ws-hist]'); pg.wait_for_selector('#ver-restore'); pg.locator('#ver-list [data-ver]').last.click(); pg.click('#ver-restore'); pg.wait_for_timeout(200)
+        check('资深' in pg.evaluate("JSON.parse(localStorage.getItem('pc.workspace.v1'))[0].body"), 'version restore works')
+        if pg.locator('#modal-root .overlay').count(): close_modal()
+        pg.click('#btn-workspace'); pg.wait_for_selector('#ws-list'); pg.screenshot(path=os.path.join(ROOT, 'docs/workspace.png'))
+        pg.click('[data-ws-del]'); pg.wait_for_timeout(100)
+        if pg.locator('[data-ws-del]').count(): pg.click('[data-ws-del]')
+        pg.wait_for_selector('#toast-action'); check(pg.evaluate("JSON.parse(localStorage.getItem('pc.workspace.v1')).length") == 0, 'library delete')
+        pg.click('#toast-action'); pg.wait_for_timeout(100); check(pg.evaluate("JSON.parse(localStorage.getItem('pc.workspace.v1')).length") == 1, 'library delete undo')
+        if pg.locator('#modal-root .overlay').count(): close_modal()
+        # compare
+        tools('compare'); pg.fill('#cmp-extra', 'mock-b'); pg.click('#cmp-run')
+        pg.wait_for_function("document.querySelectorAll('.cmp-col').length >= 2 && !document.querySelector('#cmp-grid .spin')", timeout=15000)
+        check(pg.locator('.cmp-col').count() >= 2 and pg.inner_text('#cmp-grid').count('TEST_RUN_ANSWER') >= 2, 'compare runs models side by side')
+        pg.screenshot(path=os.path.join(ROOT, 'docs/compare.png')); close_modal()
+        # chat
+        pg.click('#btn-chat'); pg.wait_for_selector('#chat-input'); pg.fill('#chat-input', '你好'); pg.click('#chat-send')
+        pg.wait_for_function("document.querySelectorAll('#chat-log .msg').length >= 2 && !document.querySelector('#chat-log .spin')", timeout=15000)
+        lr = pg.evaluate("fetch('http://127.0.0.1:8787/__last').then(r=>r.json())")['body']
+        check(lr['messages'][0]['role'] == 'system' and '资深' in lr['messages'][0]['content'] and lr['messages'][-1]['content'] == '你好', 'chat uses converted prompt as system')
+        close_modal()
+        # toolbox
+        before = pg.inner_text('#output')
+        tools('toolbox'); pg.click('[data-tool="cot"]'); pg.click('#tool-go'); pg.wait_for_timeout(200)
+        check(pg.inner_text('#output') != before, 'toolbox applies chain-of-thought')
+        if pg.locator('#modal-root .overlay').count(): close_modal()
+        tools('toolbox'); pg.click('[data-tool="image"]'); pg.wait_for_selector('#img-preview')
+        pg.wait_for_timeout(100); check('--ar' in pg.inner_text('#img-preview'), 'image preset formats Midjourney params')
+        close_modal()
+        # gallery
+        n0 = pg.evaluate("JSON.parse(localStorage.getItem('pc.templates.v1')||'[]').length")
+        tools('gallery'); pg.locator('[data-gl-install]').first.click(); pg.wait_for_timeout(150)
+        check(pg.evaluate("JSON.parse(localStorage.getItem('pc.templates.v1')||'[]').length") == n0 + 1, 'gallery installs a template')
+        pg.click('.gl-import summary'); pg.fill('#gl-url', 'http://127.0.0.1:8787/pack.json'); pg.click('#gl-fetch'); pg.wait_for_function("document.querySelector('#gl-status').textContent.includes('E2E')", timeout=8000)
+        check('E2E Pack' in pg.inner_text('#modal-root'), 'gallery imports a pack by URL')
+        pg.screenshot(path=os.path.join(ROOT, 'docs/gallery.png')); close_modal()
+        # stats
+        tools('stats'); n_calls = int(re.sub(r'\D', '', pg.inner_text('#kpi-calls')) or 0)
+        check(n_calls >= 3, f'stats records usage ({n_calls})'); pg.screenshot(path=os.path.join(ROOT, 'docs/stats.png')); close_modal()
+        # sync: webdav + gist round trip
+        tools('sync'); pg.click('[data-sy="webdav"]'); pg.fill('#sy-url', 'http://127.0.0.1:8787/dav/'); pg.fill('#sy-user', 'u'); pg.fill('#sy-pass', 'p')
+        pg.click('#sy-now'); pg.wait_for_function("/[0-9]/.test(document.querySelector('#sy-status').textContent) && !document.querySelector('#sy-now').disabled", timeout=8000)
+        dav = pg.evaluate("fetch('http://127.0.0.1:8787/dav/prompt-converter-sync.json',{headers:{Authorization:'Basic '+btoa('u:p')}}).then(r=>r.status)")
+        check(dav == 200, 'WebDAV push stored the bundle')
+        pg.fill('#sy-pass', 'wrong'); pg.click('#sy-now'); pg.wait_for_timeout(500)
+        check(pg.evaluate("document.querySelector('#sy-status').className").find('err') >= 0, 'WebDAV auth error shown')
+        pg.evaluate("localStorage.setItem('pc.gistApi','http://127.0.0.1:8787')")
+        pg.click('[data-sy="gist"]'); pg.fill('#sy-token', 'ghp-test'); pg.click('#sy-now'); pg.wait_for_timeout(800)
+        check(pg.evaluate("JSON.parse(localStorage.getItem('pc.settings.v1')).sync.gistId") == 'g1', 'Gist sync creates a private gist')
+        close_modal()
+        # settings search + appearance
+        pg.click('#btn-settings'); pg.wait_for_selector('#set-search'); pg.fill('#set-search', '强调'); pg.wait_for_timeout(150)
+        check(pg.locator('[data-accent]').first.is_visible(), 'settings search finds accent option')
+        pg.locator('[data-accent]').nth(2).click(); pg.fill('#set-search', ''); pg.locator('#f-compact').check(); pg.click('.modal [data-close].primary')
+        pg.wait_for_timeout(200)
+        if pg.locator('#modal-root .overlay').count(): close_modal()
+        s2 = pg.evaluate("JSON.parse(localStorage.getItem('pc.settings.v1'))")
+        check(s2.get('compact') is True and pg.evaluate("document.documentElement.classList.contains('compact') || document.body.classList.contains('compact')"), 'compact mode applied')
+        patch({'compact': False, 'accent': ''})
+        # onboarding + demo mode (fresh profile)
+        pg.evaluate("localStorage.clear()"); pg.reload(); pg.wait_for_selector('#ob-next', timeout=8000)
+        check(True, 'onboarding shown on first run'); pg.screenshot(path=os.path.join(ROOT, 'docs/onboarding.png'))
+        pg.click('#ob-demo'); pg.wait_for_timeout(200)
+        check(pg.locator('#demo-exit').count() == 1, 'demo mode banner')
+        pg.fill('#input', '写一封请假邮件'); pg.click('#btn-convert'); pg.wait_for_function("!document.querySelector('.card.busy')", timeout=15000)
+        check(len(pg.inner_text('#output')) > 40, 'demo mode produces sample output without a key')
+        pg.click('#demo-exit'); pg.wait_for_timeout(200); check(pg.locator('#demo-exit').count() == 0, 'demo mode exits')
+        pg.evaluate("localStorage.clear()"); pg.reload(); pg.wait_for_selector('#ob-next')
+        pg.click('#ob-next'); pg.locator('[data-ob-prov="custom"]').first.dispatch_event('click'); pg.wait_for_timeout(100); pg.click('#ob-next'); pg.wait_for_selector('#ob-base')
+        pg.fill('#ob-base', 'http://127.0.0.1:8787/v1'); pg.fill('#ob-key', 'sk-test'); pg.fill('#ob-model', 'mock-model'); pg.click('#ob-test')
+        pg.wait_for_function("document.querySelector('#ob-status').className.includes('ok')", timeout=8000); check(True, 'onboarding connection test')
+        pg.click('#ob-next'); pg.click('#ob-run'); pg.wait_for_function("document.querySelector('#ob-out') && document.querySelector('#ob-out').textContent.length > 20", timeout=15000)
+        check(True, 'onboarding sample conversion'); pg.click('#ob-finish'); pg.wait_for_timeout(200)
+        s3 = pg.evaluate("JSON.parse(localStorage.getItem('pc.settings.v1'))"); check(s3['onboarded'] and s3['apiKeys'].get('custom') == 'sk-test', 'onboarding saves provider + key')
         # dark screenshot
         pg.evaluate("(()=>{const s=JSON.parse(localStorage.getItem('pc.settings.v1'));s.theme='dark';s.apiKeys.custom='sk-test';s.baseUrl='http://127.0.0.1:8787/v1';s.stream=true;localStorage.setItem('pc.settings.v1',JSON.stringify(s))})()")
         pg.reload(); pg.fill('#input', '帮我写个python脚本批量重命名图片'); pg.click('[data-mode="coding"]'); pg.click('#btn-convert')

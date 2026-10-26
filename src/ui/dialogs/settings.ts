@@ -25,7 +25,8 @@ async function saveBackup(json: string) {
   download(name, json, 'application/json'); return true;
 }
 
-let showAdv = false;
+let showAdv = (() => { try { return localStorage.getItem('pc.setAdv') === '1'; } catch { return false; } })();
+const rememberAdv = () => { try { localStorage.setItem('pc.setAdv', showAdv ? '1' : '0'); } catch { /* ignore */ } };
 export function openSettings() {
   const d = t();
   const s = st.s;
@@ -118,8 +119,8 @@ export function openSettings() {
     const q = <T extends HTMLElement = HTMLInputElement>(id: string) => root.querySelector('#' + id) as T;
     const form = q<HTMLElement>('set-form');
     const applyView = () => { form.classList.toggle('show-adv', showAdv || !!q('set-search').value.trim()); q('set-basic').className = showAdv ? '' : 'on'; q('set-adv').className = showAdv ? 'on' : ''; q('set-basic').setAttribute('aria-selected', String(!showAdv)); q('set-adv').setAttribute('aria-selected', String(showAdv)); };
-    q('set-basic').addEventListener('click', () => { showAdv = false; applyView(); });
-    q('set-adv').addEventListener('click', () => { showAdv = true; applyView(); });
+    q('set-basic').addEventListener('click', () => { showAdv = false; rememberAdv(); applyView(); });
+    q('set-adv').addEventListener('click', () => { showAdv = true; rememberAdv(); applyView(); });
     q('set-search').addEventListener('input', () => {
       const term = q('set-search').value.trim().toLowerCase(); applyView();
       form.querySelectorAll<HTMLElement>('label, .field, .profiles, .row.between, .row.wrap').forEach((el) => {

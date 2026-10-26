@@ -8,6 +8,9 @@ const REPLY = '## 角色\n你是一名资深 Python 工程师。\n\n## 目标\n�
 const REFINED = '## 角色\n资深 Python 工程师\n\n## 目标\n批量重命名图片（精简版）\n\n## 输出格式\n完整代码';
 const ANSWER = '```python\nimport os\nfor i, f in enumerate(sorted(os.listdir("."))):\n    os.rename(f, f"img_{i}.jpg")\n```\n\nTEST_RUN_ANSWER';
 let flaky = 0;
+const dav = new Map(); const gists = new Map(); let gistSeq = 0;
+const readBody = (req) => new Promise((ok) => { let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => ok(b)); });
+const PACK = { name: 'E2E Pack', templates: [{ id: 'e2e-tpl', name: 'E2E 模板', icon: '🧪', desc: 'from url', prompt: 'You are an e2e template.' }] };
 const PH_REPLY = '## 角色\n你是一名文案策划。\n\n## 目标\n为 [请补充：产品名称] 写一段介绍，面向 [TODO: 目标用户]。\n\n## 输出格式\n3 段文字';
 let last = null; // last chat request body (for assertions)
 let lastHeaders = null;
@@ -15,11 +18,25 @@ const json = (res, code, obj, extra = {}) => { res.writeHead(code, { 'Content-Ty
 
 http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, anthropic-version, anthropic-dangerous-direct-browser-access');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Depth, x-api-key, anthropic-version, anthropic-dangerous-direct-browser-access');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, OPTIONS');
   res.setHeader('Access-Control-Expose-Headers', 'Retry-After');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   if (req.method === 'GET' && req.url.startsWith('/repos/amlhdsan/prompt-converter/releases/latest')) {
     return json(res, 200, { tag_name: 'v9.9.0', html_url: 'https://github.com/amlhdsan/prompt-converter/releases/tag/v9.9.0' });
+  }
+  if (req.url.startsWith('/dav/')) {
+    if (req.headers.authorization !== 'Basic ' + Buffer.from('u:p').toString('base64')) return json(res, 401, {});
+    if (req.method === 'PUT') return readBody(req).then((b) => { dav.set(req.url, b); res.writeHead(201); res.end(); });
+    if (dav.has(req.url)) { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(dav.get(req.url)); }
+    return json(res, 404, {});
+  }
+  if (req.url === '/pack.json') return json(res, 200, PACK);
+  if (req.url.startsWith('/gists')) {
+    if (req.headers.authorization !== 'Bearer ghp-test') return json(res, 401, {});
+    const id = req.url.split('/')[2];
+    if (req.method === 'GET') return gists.has(id) ? json(res, 200, { id, files: gists.get(id) }) : json(res, 404, {});
+    return readBody(req).then((b) => { const g = JSON.parse(b); const nid = id || 'g' + ++gistSeq; gists.set(nid, g.files); json(res, req.method === 'POST' ? 201 : 200, { id: nid }); });
   }
   if (req.method === 'GET' && req.url === '/__last') return json(res, 200, { body: last, headers: lastHeaders });
   const key = req.headers['x-api-key'] || (req.headers.authorization || '').replace(/^Bearer /, '');
