@@ -18,7 +18,8 @@ export function renderOutput(): string {
   const o = out();
   const main = o
     ? body(o)
-    : `<div class="placeholder">${st.busy ? `<span class="spin"></span> ${d.converting}` : `<div class="ph-icon">${icons.mark}</div><div>${d.empty}</div><div class="small">${fmt(isQuick ? d.quickHint : d.shortcut, { m: modKey })}</div>${isQuick ? '' : `<button class="ghost small" id="btn-examples">${icons.book} ${d.examples}</button>`}`}</div>`;
+    : `<div class="placeholder">${st.busy ? `<div class="skeleton" aria-hidden="true"><span></span><span></span><span></span><span></span></div><span class="small"><span class="spin"></span> ${d.converting}</span>` : `<div class="ph-icon">${icons.mark}</div><div>${d.empty}</div><div class="small">${fmt(isQuick ? d.quickHint : d.shortcut, { m: modKey })}</div>${isQuick ? '' : `<div class="row center wrap"><button class="ghost small" id="btn-examples">${icons.book} ${d.examples}</button><button class="ghost small" id="btn-open-gallery">🧩 ${d.x.gallery}</button></div>
+      <ul class="tips small">${[d.x.tip1, d.x.tip2, d.x.tip3].map((x) => `<li>${esc(fmt(x, { m: modKey }))}</li>`).join('')}</ul>`}`}</div>`;
   if (isQuick || st.view === 'single') return main;
   if (st.view === 'compare') {
     return `<div class="diff"><div><div class="tag">${d.original}</div><pre class="out dim">${esc(st.input) || '—'}</pre></div><div><div class="tag accent">${d.converted}</div>${main}</div></div>`;
@@ -37,8 +38,13 @@ export function renderVariantTabs(): string {
 
 export function statsText(): string {
   const o = out();
-  if (!o) return '';
   const d = t();
+  if (st.busy) {
+    // Live progress: elapsed seconds and streaming speed.
+    const sec = Math.max(0.1, (performance.now() - st.startedAt) / 1000);
+    return `<span class="spin"></span>${fmt(d.x.progress, { s: sec.toFixed(1), n: o.length, r: Math.round(o.length / sec) })}`;
+  }
+  if (!o) return '';
   const inTok = estimateTokens(o), outTok = Math.round(inTok * 1.5);
   const p = providerById(st.s.provider);
   const cost = estimateCost(st.s.model, inTok, outTok, !!p.noKey);

@@ -67,3 +67,16 @@ export async function hotkeyStatus(): Promise<string> {
   if (!isDesktop) return '';
   try { const { invoke } = await import('@tauri-apps/api/core'); return (await invoke<string>('hotkey_status')) || ''; } catch { return ''; }
 }
+
+/** Desktop: hotkey that copies the current selection in any app and converts it in the quick window. */
+export async function setSelectionHotkey(accel: string): Promise<void> {
+  if (!isDesktop) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('set_selection_hotkey', { accel });
+}
+/** Desktop: toggle the compact always-on-top mini mode of the main window. */
+export async function setMini(on: boolean): Promise<void> {
+  if (!isDesktop) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('set_mini', { on });
+}

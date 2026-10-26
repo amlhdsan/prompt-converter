@@ -9,11 +9,22 @@ export const esc = escapeHtml;
 export const fmt = (str: string, v: Record<string, string | number>) => str.replace(/\{(\w+)\}/g, (_, k) => String(v[k] ?? ''));
 export const uid = () => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-export function toast(msg: string) {
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+/** Shows a toast. With `action`, renders a button (e.g. Undo) and keeps the toast visible longer. */
+export function toast(msg: string, action?: { label: string; run: () => void }) {
   const el = $('#toast'); if (!el) return;
-  el.textContent = msg; el.className = 'show';
-  clearTimeout((toast as any).h); (toast as any).h = setTimeout(() => (el.className = ''), 2400);
+  el.innerHTML = '';
+  const span = document.createElement('span'); span.textContent = msg; el.appendChild(span);
+  if (action) {
+    const b = document.createElement('button'); b.className = 'toast-btn'; b.id = 'toast-action'; b.textContent = action.label;
+    b.addEventListener('click', () => { el.className = ''; action.run(); }, { once: true });
+    el.appendChild(b);
+  }
+  el.className = 'show' + (action ? ' has-action' : '');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.className = ''), action ? 6000 : 2400);
 }
+/** Toast with an Undo button. */
+export const undoToast = (msg: string, undo: () => void) => toast(msg, { label: t().x.undo, run: undo });
 
 export async function copyText(txt: string, silent = false) {
   try { await writeClipboard(txt); } catch {

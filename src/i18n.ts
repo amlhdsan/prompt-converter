@@ -136,5 +136,6 @@ const en: typeof zh = {
   },
 };
 import { ja } from './i18n.ja';
-export const DICT: Record<'zh' | 'en' | 'ja', typeof zh> = { zh, en, ja };
-export type Dict = typeof zh;
+import { pickX, type XDict } from './i18n.x';
+export type Dict = typeof zh & { x: XDict };
+export const DICT: Record<'zh' | 'en' | 'ja', Dict> = { zh: { ...zh, x: pickX(0) }, en: { ...en, x: pickX(1) }, ja: { ...ja, x: pickX(2) } };

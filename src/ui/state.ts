@@ -22,6 +22,12 @@ export const st = {
   notice: '',
   /** Set when the global error boundary caught something. */
   crashed: null as null | { msg: string },
+  /** performance.now() when the current request started (progress feedback). */
+  startedAt: 0,
+  /** Copy the result after the next conversion (one-click "convert & copy"). */
+  copyNext: false,
+  /** Mode suggested by auto-detection that the user dismissed for this input. */
+  dismissedDetect: '',
 };
 /** Content language for data that only exists in zh/en (examples, provider notes). */
 export const lang2 = (): 'zh' | 'en' => (st.s.uiLang === 'zh' ? 'zh' : 'en');

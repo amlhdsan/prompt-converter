@@ -4,10 +4,10 @@ import { providerById, needsKey } from './providers';
 import { APP_VERSION, REPO_URL, checkForUpdate } from './update';
 import { decodeShare, encodeShare, shareFromHash } from './lib/share';
 import { hideQuick, hotkeyStatus, isDesktop, isQuick, modKey, onEvent, openExternal } from './platform';
-import { $, copyText, download, esc, fmt, modalOpen, toast } from './ui/dom';
+import { $, copyText, download, esc, fmt, modalOpen, toast, undoToast } from './ui/dom';
 import { icons } from './ui/icons';
 import { onRender, out, persist, reloadSettings, st, t, type View } from './ui/state';
-import { allModes, convert, refine, setLiveHooks, setMode, setNoticeHook } from './ui/actions';
+import { allModes, convert, inDemo, modeIcon, refine, setLiveHooks, setMode, setNoticeHook } from './ui/actions';
 import { renderOutput, renderQuality, renderVariantTabs, statsText } from './ui/output';
 import { openSettings } from './ui/dialogs/settings';
 import { openHistory } from './ui/dialogs/history';
@@ -19,6 +19,19 @@ import { findPlaceholders } from './lib/placeholders';
 import { logError } from './lib/errlog';
 import { abortAll } from './llm';
 import { checkIntegrity, health, onExternalChange, UI_LANGS } from './storage';
+import { applyAppearance } from './ui/appearance';
+import { openOnboarding } from './ui/dialogs/onboarding';
+import { openWorkspace, saveCurrent } from './ui/dialogs/workspace';
+import { openCompare } from './ui/dialogs/compare';
+import { openChat } from './ui/dialogs/chat';
+import { openToolbox, TOOLS, type Tool } from './ui/dialogs/toolbox';
+import { openGallery } from './ui/dialogs/gallery';
+import { openStats } from './ui/dialogs/stats';
+import { openSync } from './ui/dialogs/sync';
+import { detectMode } from './lib/detect';
+import { UndoStack } from './lib/undo';
+import { loadDraft, saveDraft } from './storage';
+import { setMini } from './platform';
 import { exportHistoryMd, openBatch, openFill, openModeHints, openPalette, renderCrash, type Command } from './ui/dialogs/tools';
 
 const mq = matchMedia('(prefers-color-scheme: dark)');
@@ -29,6 +42,7 @@ function applyTheme() {
   document.documentElement.lang = s.uiLang === 'zh' ? 'zh-CN' : s.uiLang;
   document.documentElement.classList.toggle('quick', isQuick);
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#000000' : '#f5f5f7');
+  applyAppearance(s, dark);
 }
 mq.addEventListener('change', applyTheme);
 
@@ -80,8 +94,21 @@ function renderApp() {
       <div class="brand"><span class="logo" aria-hidden="true">${icons.mark}</span><span class="brand-name">${d.title}</span></div>
       <nav class="actions" aria-label="toolbar">
         <button class="icon" id="btn-library" title="${d.library}" aria-label="${d.library}">${icons.book}</button>
-        <button class="icon hide-sm" id="btn-palette" title="${d.palette} (${modKey}+K)" aria-label="${d.palette}">${icons.search}</button>
-        <button class="icon hide-sm" id="btn-batch" title="${d.batch} (${modKey}+Shift+B)" aria-label="${d.batch}">${icons.layers}</button>
+        <button class="icon" id="btn-workspace" title="${d.x.workspace} (${modKey}+Shift+L)" aria-label="${d.x.workspace}">${icons.folder}</button>
+        <div class="menu">
+          <button class="icon" id="btn-tools" aria-haspopup="menu" aria-expanded="false" title="${d.x.tools}" aria-label="${d.x.tools}">${icons.wand}</button>
+          <div class="menu-pop right" role="menu" id="tools-menu" hidden>
+            <button role="menuitem" data-menu="palette">${icons.search} ${d.palette}<kbd>${modKey}K</kbd></button>
+            <button role="menuitem" data-menu="toolbox">${icons.wand} ${d.x.toolbox}</button>
+            <button role="menuitem" data-menu="compare">${icons.columns} ${d.x.compare}</button>
+            <button role="menuitem" data-menu="chat" ${o ? '' : 'disabled'}>${icons.chat} ${d.x.chat}</button>
+            <button role="menuitem" data-menu="batch">${icons.layers} ${d.batch}</button>
+            <button role="menuitem" data-menu="gallery">🧩 ${d.x.gallery}</button>
+            <button role="menuitem" data-menu="stats">📊 ${d.x.stats}</button>
+            ${s.sync.kind !== 'off' ? `<button role="menuitem" data-menu="sync">☁️ ${d.x.sync}</button>` : ''}
+            ${isDesktop ? `<button role="menuitem" data-menu="mini">📌 ${d.x.miniMode}</button>` : ''}
+          </div>
+        </div>
         <button class="icon hide-sm" id="btn-keys" title="${d.shortcuts} (?)" aria-label="${d.shortcuts}">${icons.kbd}</button>
         <button class="icon" id="btn-history" title="${d.history}" aria-label="${d.history}">${icons.clock}</button>
         <button class="icon" id="btn-theme" title="${d.theme[s.theme]}" aria-label="${d.theme[s.theme]}">${s.theme === 'dark' ? icons.moon : s.theme === 'light' ? icons.sun : icons.auto}</button>
@@ -99,6 +126,7 @@ function renderApp() {
 
   <main>
     ${renderUpdateNotice()}
+    ${inDemo() ? `<div class="banner info" id="demo-banner">🎭 ${d.x.demoBanner} · <button class="link" id="demo-setup">${d.x.demoSetup}</button> · <button class="link" id="demo-exit">${d.x.demoExit}</button></div>` : ''}
     ${health.degraded ? `<div class="banner warn" id="storage-banner" role="alert">${d.storageDegraded}</div>` : ''}
     ${health.recovered.length && !recoveredSeen ? `<div class="banner info" id="recovered-banner">${d.storageRecovered} · <button class="link" id="recovered-dismiss">${d.dismiss}</button></div>` : ''}
     ${hotkeyIssue ? `<div class="banner warn" id="hotkey-banner">${esc(fmt(d.hotkeyStartupFailed, { k: hotkeyIssue }))} · <button class="link" id="hotkey-fix">${d.settings}</button></div>` : ''}
@@ -117,13 +145,22 @@ function renderApp() {
 
     <section class="grid">
       <div class="card">
-        <div class="card-h"><label for="input">${d.original}</label><span class="muted" id="in-count">${st.input.length} ${d.chars}</span></div>
-        <textarea id="input" spellcheck="false" placeholder="${esc(d.placeholder)}">${esc(st.input)}</textarea>
+        <div class="card-h"><label for="input">${d.original}</label>
+          <span class="row"><button class="icon tiny" id="btn-undo" title="${d.x.undo} (${modKey}+Z)" aria-label="${d.x.undo}" ${undo.canUndo ? '' : 'disabled'}>${icons.undo}</button><button class="icon tiny" id="btn-redo" title="${d.x.redo} (${modKey}+Shift+Z)" aria-label="${d.x.redo}" ${undo.canRedo ? '' : 'disabled'}>${icons.redo}</button>
+          <span class="muted small" id="in-count">${inCount()}</span></span></div>
+        <div class="drop-wrap" id="drop-wrap">
+          <textarea id="input" spellcheck="false" placeholder="${esc(d.placeholder)}">${esc(st.input)}</textarea>
+          <div class="drop-hint" aria-hidden="true">${icons.download} ${d.x.dropHint}</div>
+        </div>
+        <div id="detect-slot">${detectChip()}</div>
         <div class="card-f">
-          <span class="muted small hide-sm">${fmt(d.shortcut, { m: modKey })}</span>
+          <span class="muted small hide-sm" id="draft-state">${st.input ? d.x.draftSaved : fmt(d.shortcut, { m: modKey })}</span>
           <div class="row">
-            <button class="ghost" id="btn-clear">${d.clear}</button>
-            <button class="primary" id="btn-convert" aria-keyshortcuts="Control+Enter Meta+Enter">${st.busy && st.task === 'convert' ? `<span class="spin"></span>${d.stop}` : d.convert.replace('✨ ', '')}</button>
+            <button class="ghost" id="btn-clear" ${st.input || o ? '' : 'disabled'}>${d.clear}</button>
+            <div class="split">
+              <button class="primary" id="btn-convert" aria-keyshortcuts="Control+Enter Meta+Enter">${st.busy && st.task === 'convert' ? `<span class="spin"></span>${d.stop}` : d.convert.replace('✨ ', '')}</button>
+              <button class="primary split-r" id="btn-convert-copy" title="${d.x.convertCopy} (${modKey}+Shift+Enter)" aria-label="${d.x.convertCopy}" ${st.busy ? 'disabled' : ''}>${icons.copy}</button>
+            </div>
           </div>
         </div>
       </div>
@@ -147,6 +184,8 @@ function renderApp() {
           <span class="muted small" id="out-count">${statsText()}</span>
           <div class="row">
             <button class="ghost hide-sm" id="btn-reuse" ${o && !st.busy ? '' : 'disabled'}>${d.useAsInput}</button>
+            <button class="icon" id="btn-save-ws" ${o && !st.busy ? '' : 'disabled'} title="${d.x.wsSaveCurrent} (${modKey}+S)" aria-label="${d.x.wsSaveCurrent}">${icons.bookmark}</button>
+            <button class="icon" id="btn-chat" ${o && !st.busy ? '' : 'disabled'} title="${d.x.chat}" aria-label="${d.x.chat}">${icons.chat}</button>
             ${ph && !st.busy ? `<button class="ghost" id="btn-fill" title="${esc(d.fillTitle)}">${esc(fmt(d.fillPlaceholders, { n: ph }))}</button>` : ''}
             <button class="ghost" id="btn-test" ${o && !st.busy ? '' : 'disabled'} title="${d.testRunHint}">${icons.play}<span>${d.testRun}</span></button>
             <div class="menu">
@@ -155,6 +194,8 @@ function renderApp() {
                 <button role="menuitem" id="btn-export-md">${icons.download} ${d.exportMd}</button>
                 <button role="menuitem" id="btn-export-txt">${icons.download} ${d.exportTxt}</button>
                 <button role="menuitem" id="btn-share">${icons.share} ${d.share}</button>
+                <button role="menuitem" data-menu="compare">${icons.columns} ${d.x.compareOut}</button>
+                ${TOOLS.map((k) => `<button role="menuitem" data-tool-open="${k}">${icons.wand} ${d.x[`tool_${k}`]}</button>`).join('')}
               </div>
             </div>
             <button class="primary soft" id="btn-copy" ${o ? '' : 'disabled'}>${icons.copy}<span>${d.copy}</span></button>
@@ -172,6 +213,35 @@ function renderApp() {
   <div id="toast" role="status" aria-live="polite"></div>`;
   bind();
   if (focusId && !modalOpen()) document.getElementById(focusId)?.focus?.();
+}
+
+// ---- Input helpers: undo/redo, draft autosave, mode detection, counter ----
+const undo = new UndoStack('');
+let typingTimer: ReturnType<typeof setTimeout> | undefined;
+let draftTimer: ReturnType<typeof setTimeout> | undefined;
+/** Programmatic input changes go through here so they can be undone. */
+function setInput(v: string, rerenderNow = true) { undo.push(st.input); undo.push(v); st.input = v; st.dismissedDetect = ''; scheduleDraft(); if (rerenderNow) render(); }
+function scheduleDraft() { clearTimeout(draftTimer); draftTimer = setTimeout(() => { saveDraft(st.input); const el = document.getElementById('draft-state'); if (el && st.input) el.textContent = t().x.draftSaved; }, 400); }
+const inCount = () => `${st.input.length} ${t().chars} · ${fmt(t().tokens, { n: estimateTokens(st.input) })}`;
+function detectChip(): string {
+  if (!st.s.autoDetect || isQuick || st.busy) return '';
+  const r = detectMode(st.input);
+  if (!r || r.mode === st.s.mode || r.confidence < 0.35 || st.dismissedDetect === r.mode) return '';
+  const d = t();
+  return `<div class="detect" role="status"><span>💡 ${esc(fmt(d.x.detected, { m: `${modeIcon[r.mode]} ${d.modes[r.mode]}` }))}</span><button class="link" id="detect-apply" data-mode-apply="${r.mode}">${d.x.detectSwitch}</button><button class="icon tiny" id="detect-dismiss" aria-label="${d.dismiss}">${icons.x}</button></div>`;
+}
+function refreshDetect() { const s = document.getElementById('detect-slot'); if (s) { s.innerHTML = detectChip(); bindDetect(); } }
+function bindDetect() {
+  $('#detect-apply')?.addEventListener('click', (e) => setMode((e.currentTarget as HTMLElement).dataset.modeApply!));
+  $('#detect-dismiss')?.addEventListener('click', () => { const r = detectMode(st.input); st.dismissedDetect = r?.mode ?? ''; refreshDetect(); });
+}
+function doUndo(redo = false) { const v = redo ? undo.redo() : undo.undo(); if (v === null) return; st.input = v; scheduleDraft(); render(); const ta = $<HTMLTextAreaElement>('#input'); ta?.focus(); ta?.setSelectionRange(v.length, v.length); }
+async function readDroppedFile(f: File) {
+  if (f.size > 2_000_000) { toast(t().x.dropTooBig); return; }
+  if (f.type && !/^text\/|json|xml|javascript|markdown|yaml|csv/.test(f.type) && !/\.(txt|md|markdown|json|csv|ya?ml|xml|html?|js|ts|py|java|go|rs|c|cpp|h|sql|sh|log)$/i.test(f.name)) { toast(t().x.dropUnsupported); return; }
+  const text = await f.text();
+  setInput(st.input.trim() ? `${st.input.trimEnd()}\n\n${text}` : text);
+  toast(fmt(t().x.dropLoaded, { name: f.name }));
 }
 
 function renderUpdateNotice(): string {
@@ -224,11 +294,43 @@ async function share() {
 
 function bind() {
   const ta = $<HTMLTextAreaElement>('#input');
-  ta.addEventListener('input', () => { st.input = ta.value; $('#in-count').textContent = `${st.input.length} ${t().chars} · ${fmt(t().tokens, { n: estimateTokens(st.input) })}`; });
+  ta.addEventListener('input', () => {
+    // Group keystrokes into one undo step per pause in typing.
+    if (!typingTimer) undo.push(st.input);
+    clearTimeout(typingTimer); typingTimer = setTimeout(() => { typingTimer = undefined; undo.push(ta.value); }, 700);
+    st.input = ta.value; undo.replace(ta.value);
+    $('#in-count').textContent = inCount(); scheduleDraft();
+    const ds = $('#draft-state'); if (ds) ds.textContent = '…';
+    $('#btn-clear')?.removeAttribute('disabled');
+    refreshDetect();
+  });
+  const drop = $('#drop-wrap');
+  drop.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); drop.classList.add('dragging'); } });
+  drop.addEventListener('dragleave', () => drop.classList.remove('dragging'));
+  drop.addEventListener('drop', (e) => { const f = e.dataTransfer?.files?.[0]; drop.classList.remove('dragging'); if (f) { e.preventDefault(); readDroppedFile(f); } });
+  bindDetect();
+  $('#btn-undo').addEventListener('click', () => doUndo());
+  $('#btn-redo').addEventListener('click', () => doUndo(true));
   $('#btn-convert').addEventListener('click', () => (st.busy && st.task !== 'convert' ? st.ctrl?.abort() : doConvert()));
-  $('#btn-clear').addEventListener('click', () => { st.input = ''; st.outputs = []; st.error = ''; render(); $('#input').focus(); });
+  $('#btn-convert-copy').addEventListener('click', () => { if (st.busy) return; st.copyNext = true; doConvert(); });
+  $('#btn-clear').addEventListener('click', () => {
+    const prev = { input: st.input, outputs: [...st.outputs], active: st.active };
+    undo.push(st.input); st.input = ''; st.outputs = []; st.error = ''; saveDraft(''); render(); $('#input').focus();
+    undoToast(t().x.cleared, () => { st.input = prev.input; st.outputs = prev.outputs; st.active = prev.active; saveDraft(st.input); render(); });
+  });
+  $('#btn-save-ws').addEventListener('click', () => saveCurrent());
+  $('#btn-chat').addEventListener('click', openChat);
+  $('#btn-open-gallery')?.addEventListener('click', openGallery);
+  $('#btn-workspace').addEventListener('click', () => openWorkspace());
+  $('#demo-setup')?.addEventListener('click', () => openOnboarding(1));
+  $('#demo-exit')?.addEventListener('click', () => { st.s.demo = false; persist(); render(); });
+  document.querySelectorAll<HTMLElement>('[data-tool-open]').forEach((b) => b.addEventListener('click', () => { closeMenus(); openToolbox(b.dataset.toolOpen as Tool); }));
+  document.querySelectorAll<HTMLElement>('[data-menu]').forEach((b) => b.addEventListener('click', () => { closeMenus(); runMenu(b.dataset.menu!); }));
+  const tb = $('#btn-tools'), tm = $('#tools-menu');
+  tb.addEventListener('click', (e) => { e.stopPropagation(); const open = tm.hidden; closeMenus(); tm.hidden = !open; tb.setAttribute('aria-expanded', String(open)); if (open) (tm.querySelector('button:not([disabled])') as HTMLElement)?.focus(); });
+  menuKeys(tm, tb);
   $('#btn-copy').addEventListener('click', () => out() && copyText(out()));
-  $('#btn-reuse').addEventListener('click', () => { st.input = out(); st.outputs = []; render(); });
+  $('#btn-reuse').addEventListener('click', () => { const o2 = out(); st.outputs = []; setInput(o2); });
   $('#btn-test').addEventListener('click', openTestRun);
   $('#update-dismiss')?.addEventListener('click', () => { if (st.update) { st.s.dismissedUpdate = st.update.latest; persist(); render(); } });
   $('#shared-dismiss')?.addEventListener('click', () => { st.shared = false; render(); });
@@ -260,17 +362,33 @@ function bind() {
   const more = $('#btn-more'), pop = $('#more-menu');
   const setMenu = (open: boolean) => { pop.hidden = !open; more.setAttribute('aria-expanded', String(open)); if (open) (pop.querySelector('button') as HTMLElement)?.focus(); };
   more.addEventListener('click', (e) => { e.stopPropagation(); setMenu(pop.hidden); });
-  pop.addEventListener('keydown', (e) => {
-    const items = [...pop.querySelectorAll<HTMLElement>('[role=menuitem]')]; const i = items.indexOf(document.activeElement as HTMLElement);
-    if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
-    if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
-    if (e.key === 'Escape') { e.stopPropagation(); setMenu(false); more.focus(); }
-  });
+  menuKeys(pop, more);
   $('#btn-export-md').addEventListener('click', () => { setMenu(false); exportMd(); });
   $('#btn-export-txt').addEventListener('click', () => { setMenu(false); download(`${slug()}.txt`, out()); });
   $('#btn-share').addEventListener('click', () => { setMenu(false); share(); });
 }
-document.addEventListener('click', (e) => { const pop = document.getElementById('more-menu'); if (pop && !pop.hidden && !(e.target as HTMLElement).closest('.menu')) { pop.hidden = true; $('#btn-more')?.setAttribute('aria-expanded', 'false'); } });
+function closeMenus() { document.querySelectorAll<HTMLElement>('.menu-pop').forEach((p) => { p.hidden = true; }); document.querySelectorAll('[aria-haspopup=menu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+function menuKeys(pop: HTMLElement, opener: HTMLElement) {
+  pop.addEventListener('keydown', (e) => {
+    const items = [...pop.querySelectorAll<HTMLElement>('[role=menuitem]:not([disabled])')]; const i = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    if (e.key === 'Escape') { e.stopPropagation(); closeMenus(); opener.focus(); }
+  });
+}
+let mini = false;
+function runMenu(k: string) {
+  if (k === 'palette') palette();
+  else if (k === 'toolbox') openToolbox();
+  else if (k === 'compare') openCompare(out() ? 'test' : 'convert');
+  else if (k === 'chat') { if (out()) openChat(); }
+  else if (k === 'batch') openBatch();
+  else if (k === 'gallery') openGallery();
+  else if (k === 'stats') openStats();
+  else if (k === 'sync') openSync();
+  else if (k === 'mini') { mini = !mini; document.documentElement.classList.toggle('mini', mini); setMini(mini).catch(() => {}); }
+}
+document.addEventListener('click', (e) => { if (!(e.target as HTMLElement).closest('.menu')) closeMenus(); });
 const focusInput = () => { const ta = $<HTMLTextAreaElement>('#input'); ta?.focus(); ta?.setSelectionRange(ta.value.length, ta.value.length); };
 
 function palette() {
@@ -293,10 +411,22 @@ function palette() {
     { id: 'lang', label: `${d.cmdLang} → ${d.nextLang}`, run: () => { st.s.uiLang = nextLang(); persist(); render(); } },
     { id: 'clear', label: d.cmdClear, run: () => { st.input = ''; st.outputs = []; st.error = ''; render(); } },
     { id: 'shortcuts', label: d.shortcuts, hint: '?', run: openShortcuts },
+    { id: 'convert-copy', label: d.x.convertCopy, hint: `${modKey}+Shift+Enter`, run: () => { st.copyNext = true; doConvert(); } },
+    { id: 'workspace', label: d.x.workspace, hint: `${modKey}+Shift+L`, run: () => openWorkspace() },
+    { id: 'save-ws', label: d.x.wsSaveCurrent, hint: `${modKey}+S`, run: () => saveCurrent() },
+    { id: 'compare', label: d.x.compare, run: () => openCompare() },
+    { id: 'chat', label: d.x.chat, run: openChat },
+    { id: 'gallery', label: d.x.gallery, run: openGallery },
+    { id: 'stats', label: d.x.stats, run: openStats },
+    { id: 'sync', label: d.x.sync, run: openSync },
+    { id: 'onboarding', label: d.x.rerunOnboarding, run: () => openOnboarding() },
+    { id: 'demo', label: st.s.demo ? d.x.demoExit : d.x.demoMode, run: () => { st.s.demo = !st.s.demo; persist(); render(); } },
+    { id: 'undo', label: d.x.undo, hint: `${modKey}+Z`, run: () => doUndo() },
+    ...TOOLS.map((k) => ({ id: 'tool:' + k, label: `${d.x.toolbox} · ${d.x[`tool_${k}`]}`, run: () => openToolbox(k) })),
     ...allModes().map((m) => ({ id: 'mode:' + m.id, label: fmt(d.cmdMode, { m: m.label }), run: () => setMode(m.id) })),
   ];
   // Only offer output-dependent commands when there is output.
-  openPalette(cmds.filter((c) => out() || !['copy', 'test', 'fill', 'export-md', 'share'].includes(c.id)).filter((c) => c.id !== 'fill' || findPlaceholders(out()).length));
+  openPalette(cmds.filter((c) => out() || !['copy', 'test', 'fill', 'export-md', 'share', 'chat', 'save-ws'].includes(c.id)).filter((c) => c.id !== 'fill' || findPlaceholders(out()).length));
 }
 
 // ---- Keyboard ----
@@ -313,7 +443,13 @@ document.addEventListener('keydown', (e) => {
   }
   if (mod && e.key === 'Enter') {
     if (inModal || (e.target as HTMLElement)?.id === 'refine-input') return;
-    e.preventDefault(); doConvert(); return;
+    e.preventDefault(); if (e.shiftKey && !isQuick) st.copyNext = true; doConvert(); return;
+  }
+  if (mod && (e.target as HTMLElement)?.id === 'input' && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+    // Our own undo stack survives re-renders (the native one doesn't).
+    const redo = e.code === 'KeyY' || e.shiftKey;
+    if (redo ? undo.canRedo : (undo.canUndo || typingTimer)) { e.preventDefault(); if (typingTimer) { clearTimeout(typingTimer); typingTimer = undefined; undo.push(st.input); } doUndo(redo); }
+    return;
   }
   if (e.key === 'Escape') {
     if (inModal) return;
@@ -325,6 +461,8 @@ document.addEventListener('keydown', (e) => {
   if (mod && !e.shiftKey && e.code === 'KeyK') { e.preventDefault(); if (inModal) document.querySelector<HTMLElement>('#modal-root .modal-h [data-close]')?.click(); else palette(); return; }
   if (inModal) return;
   if (mod && e.shiftKey && e.code === 'KeyB') { e.preventDefault(); openBatch(); return; }
+  if (mod && e.shiftKey && e.code === 'KeyL') { e.preventDefault(); openWorkspace(); return; }
+  if (mod && !e.shiftKey && e.code === 'KeyS') { e.preventDefault(); if (out() || st.input.trim()) saveCurrent(); return; }
   if (mod && e.shiftKey && e.code === 'KeyC') { if (out()) { e.preventDefault(); copyText(out()); } return; }
   if (mod && e.shiftKey && e.code === 'KeyR') { if (out() && !st.busy) { e.preventDefault(); openTestRun(); } return; }
   if (mod && e.key === ',') { e.preventDefault(); openSettings(); return; }
@@ -353,11 +491,17 @@ onExternalChange(() => {
   if (!st.busy && !modalOpen()) render();
 });
 if (isQuick) onEvent('quick-shown', () => { if (st.busy) return; reloadSettings(); pasteClipboard(); });
+// Desktop selection hotkey: the shell copied the selection; read it and convert right away.
+if (isQuick) onEvent('quick-selection', async () => { if (st.busy) return; reloadSettings(); await pasteClipboard(); if (st.input.trim()) doConvert(); });
+// Tray "quick mode" submenu.
+onEvent<string>('set-mode', (m) => { if (allModes().some((x) => x.id === m)) { st.s.mode = m; persist(); render(); toast(`${t().mode}: ${allModes().find((x) => x.id === m)!.label}`); } });
+onEvent<boolean>('mini', (on) => { mini = !!on; document.documentElement.classList.toggle('mini', mini); });
 
 onRender(render);
 
 async function boot() {
   checkIntegrity();
+  if (!isQuick) { const dr = loadDraft(); if (dr && !st.input) { st.input = dr; undo.reset(dr); } }
   const sh = shareFromHash();
   if (sh) {
     const p = await decodeShare(sh);
@@ -365,6 +509,11 @@ async function boot() {
     history.replaceState(null, '', location.pathname + location.search);
   }
   render();
+  // First run: welcome flow (skipped for shared links, the quick window and users who already have a key).
+  if (!isQuick && !st.shared && !st.s.onboarded) {
+    if (st.s.apiKeys[st.s.provider] || !needsKey(providerById(st.s.provider))) { st.s.onboarded = true; persist(); }
+    else openOnboarding();
+  }
   if (isDesktop && !isQuick) {
     onEvent<string>('hotkey-failed', (k) => { hotkeyIssue = k || st.s.hotkey; if (!modalOpen()) render(); });
     hotkeyStatus().then((k) => { if (k) { hotkeyIssue = k; if (!modalOpen()) render(); } });

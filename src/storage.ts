@@ -1,11 +1,15 @@
+import { DEFAULT_SYNC, type SyncConfig } from './lib/sync';
+import { sanitizePrompt, type SavedPrompt } from './lib/workspace';
+import type { UsageEvent } from './lib/stats';
+import { STATS_MAX } from './lib/stats';
 // Persistence layer. Everything lives on this device (localStorage / sessionStorage); nothing is uploaded.
 // Robustness: versioned schema + migrations, corrupted-JSON recovery (bad value is backed up, defaults used),
 // quota-exceeded fallback (evict old history, then in-memory), sanitising of every record on load and import,
 // and a multi-tab change subscription via the `storage` event.
 import { logError } from './lib/errlog';
 
-export const K = { settings: 'pc.settings.v1', history: 'pc.history.v1', templates: 'pc.templates.v1', schema: 'pc.schema' } as const;
-export const SCHEMA_VERSION = 2;
+export const K = { settings: 'pc.settings.v1', history: 'pc.history.v1', templates: 'pc.templates.v1', schema: 'pc.schema', workspace: 'pc.workspace.v1', stats: 'pc.stats.v1', draft: 'pc.draft.v1' } as const;
+export const SCHEMA_VERSION = 3;
 export type UiLang = 'zh' | 'en' | 'ja';
 export const UI_LANGS: UiLang[] = ['zh', 'en', 'ja'];
 
@@ -38,6 +42,20 @@ export interface Settings {
   modeHints: Record<string, string>;
   /** Keep a local error log that can be copied for bug reports. */
   errorLog: boolean;
+  /** v1.5 */
+  onboarded: boolean;
+  /** No-key demo mode: canned outputs, no network. */
+  demo: boolean;
+  accent: string; fontSize: 'sm' | 'md' | 'lg'; compact: boolean; motion: 'system' | 'reduce';
+  /** Suggest a mode from the input text. */
+  autoDetect: boolean;
+  /** Copy the result automatically after each conversion. */
+  autoCopy: boolean;
+  /** Record local usage statistics. */
+  stats: boolean;
+  /** Desktop: hotkey that converts the currently selected text. */
+  selHotkey: string;
+  sync: SyncConfig;
 }
 export interface Profile { id: string; name: string; provider: string; baseUrl: string; model: string; apiKey: string }
 export interface HistoryItem { id: string; at: number; mode: string; input: string; output: string; model: string; fav?: boolean }
@@ -45,12 +63,16 @@ export interface HistoryItem { id: string; at: number; mode: string; input: stri
 export interface Template { id: string; name: string; icon: string; prompt: string; at: number }
 
 export const DEFAULT_HOTKEY = 'CommandOrControl+Shift+Space';
+export const DEFAULT_SEL_HOTKEY = 'CommandOrControl+Alt+Space';
+export const ACCENTS = ['#0071e3', '#5e5ce6', '#bf5af2', '#ff375f', '#ff9f0a', '#30d158', '#64d2ff', '#8e8e93'];
 export const DEFAULT_SETTINGS: Settings = {
   provider: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKeys: {},
   mode: 'general', outLang: 'auto', customLang: '', uiLang: 'zh', theme: 'system', stream: true,
   autoUpdate: true, dismissedUpdate: '', hotkey: DEFAULT_HOTKEY, quickAutoCopy: true, autoPaste: false,
   profiles: [], activeProfile: '', variants: 1, render: 'md', timeoutSec: 60, retries: 2, sessionKeys: false, showScore: true,
   modeHints: {}, errorLog: true,
+  onboarded: false, demo: false, accent: '#0071e3', fontSize: 'md', compact: false, motion: 'system', autoDetect: true, autoCopy: false, stats: true,
+  selHotkey: DEFAULT_SEL_HOTKEY, sync: { ...DEFAULT_SYNC },
 };
 export const HISTORY_MAX = 100;
 
@@ -115,6 +137,10 @@ export function sanitizeProfile(p: unknown): Profile | null {
   if (!o || typeof o !== 'object' || !o.id || typeof o.id !== 'string') return null;
   return { id: str(o.id, '', 100), name: str(o.name, 'Profile', 60) || 'Profile', provider: str(o.provider, 'custom', 40), baseUrl: str(o.baseUrl, '', 500), model: str(o.model, '', 200), apiKey: str(o.apiKey, '', 1000) };
 }
+function sanitizeSync(v: unknown): SyncConfig {
+  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  return { kind: oneOf(o.kind, ['off', 'webdav', 'gist'] as const, 'off'), url: str(o.url, '', 500), user: str(o.user, '', 200), pass: str(o.pass, '', 500), token: str(o.token, '', 500), gistId: str(o.gistId, '', 100), includeKeys: bool(o.includeKeys, false), lastSync: num(o.lastSync, 0, 0, 8.64e15) };
+}
 export function sanitizeSettings(v: unknown): Settings {
   const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
   const d = DEFAULT_SETTINGS;
@@ -129,6 +155,11 @@ export function sanitizeSettings(v: unknown): Settings {
     render: oneOf(o.render, ['md', 'raw'] as const, d.render), timeoutSec: num(o.timeoutSec, d.timeoutSec, 5, 600),
     retries: Math.round(num(o.retries, d.retries, 0, 5)), sessionKeys: bool(o.sessionKeys, d.sessionKeys), showScore: bool(o.showScore, d.showScore),
     modeHints: strMap(o.modeHints), errorLog: bool(o.errorLog, d.errorLog),
+    onboarded: bool(o.onboarded, d.onboarded), demo: bool(o.demo, d.demo),
+    accent: typeof o.accent === 'string' && /^#[0-9a-f]{6}$/i.test(o.accent) ? o.accent : d.accent,
+    fontSize: oneOf(o.fontSize, ['sm', 'md', 'lg'] as const, d.fontSize), compact: bool(o.compact, d.compact), motion: oneOf(o.motion, ['system', 'reduce'] as const, d.motion),
+    autoDetect: bool(o.autoDetect, d.autoDetect), autoCopy: bool(o.autoCopy, d.autoCopy), stats: bool(o.stats, d.stats),
+    selHotkey: str(o.selHotkey, d.selHotkey, 80) || d.selHotkey, sync: sanitizeSync(o.sync),
   };
 }
 export function sanitizeHistoryItem(v: unknown): HistoryItem | null {
@@ -157,6 +188,12 @@ const MIGRATIONS: (() => void)[] = [
     const h = sanitizeList(readJSON(K.history, []), sanitizeHistoryItem).filter((x) => !seen.has(x.id) && !!seen.add(x.id));
     rawSet(K.history, JSON.stringify(h));
     rawSet(K.templates, JSON.stringify(sanitizeList(readJSON(K.templates, []), sanitizeTemplate)));
+  },
+  // 2 → 3: v1.5 settings fields (filled by sanitizeSettings); existing users skip onboarding.
+  () => {
+    const raw = readJSON<Record<string, unknown>>(K.settings, {});
+    const had = Object.keys(raw).length > 0;
+    rawSet(K.settings, JSON.stringify({ ...sanitizeSettings(raw), onboarded: had ? true : false }));
   },
 ];
 export function migrate(): number {
@@ -218,8 +255,19 @@ export function upsertTemplate(t: Template) {
 }
 export const deleteTemplate = (id: string) => saveTemplates(loadTemplates().filter((x) => x.id !== id));
 
+// ---------- workspace / stats / draft ----------
+export const loadWorkspace = (): SavedPrompt[] => sanitizeList(readJSON(K.workspace, []), sanitizePrompt);
+export const saveWorkspace = (w: SavedPrompt[]) => rawSet(K.workspace, JSON.stringify(w));
+export function upsertPrompt(p: SavedPrompt) { const w = loadWorkspace(); const i = w.findIndex((x) => x.id === p.id); if (i >= 0) w[i] = p; else w.unshift(p); saveWorkspace(w); }
+export const deletePrompt = (id: string) => saveWorkspace(loadWorkspace().filter((x) => x.id !== id));
+export const loadStats = (): UsageEvent[] => { const v = readJSON<unknown>(K.stats, []); return Array.isArray(v) ? v.filter((e): e is UsageEvent => !!e && typeof e === 'object' && typeof (e as UsageEvent).at === 'number') : []; };
+export function recordUsage(e: UsageEvent) { const s = loadStats(); s.push(e); rawSet(K.stats, JSON.stringify(s.slice(-STATS_MAX))); }
+export const clearStats = () => rawDel(K.stats);
+export const loadDraft = (): string => { const v = readJSON<unknown>(K.draft, ''); return typeof v === 'string' ? v : ''; };
+export const saveDraft = (s: string) => (s ? rawSet(K.draft, JSON.stringify(s.slice(0, 50_000))) : rawDel(K.draft));
+
 // ---------- import / export ----------
-export interface Backup { app: 'prompt-converter'; version: string; schema?: number; exportedAt: string; settings?: Partial<Settings>; templates?: Template[]; history?: HistoryItem[] }
+export interface Backup { app: 'prompt-converter'; version: string; schema?: number; exportedAt: string; settings?: Partial<Settings>; templates?: Template[]; history?: HistoryItem[]; workspace?: SavedPrompt[] }
 export function exportData(version: string, opts: { settings: boolean; templates: boolean; history: boolean; keys: boolean }): Backup {
   const b: Backup = { app: 'prompt-converter', version, schema: SCHEMA_VERSION, exportedAt: new Date().toISOString() };
   if (opts.settings) {
@@ -229,22 +277,24 @@ export function exportData(version: string, opts: { settings: boolean; templates
   }
   if (opts.templates) b.templates = loadTemplates();
   if (opts.history) b.history = loadHistory();
+  if (opts.templates) b.workspace = loadWorkspace();
+  if (!opts.keys && b.settings?.sync) b.settings.sync = { ...b.settings.sync, pass: '', token: '' };
   return b;
 }
 export class ImportError extends Error {}
 /** Validates and merges a backup. Templates/history are merged by id (imported wins). Throws ImportError when invalid. */
-export function importData(raw: unknown): { settings: boolean; templates: number; history: number; skipped: number } {
+export function importData(raw: unknown): { settings: boolean; templates: number; history: number; skipped: number; workspace?: number } {
   const b = raw as Partial<Backup> | null;
   if (!b || typeof b !== 'object' || Array.isArray(b) || b.app !== 'prompt-converter') throw new ImportError('invalid');
   if (typeof b.schema === 'number' && b.schema > SCHEMA_VERSION) throw new ImportError('newer');
-  const res = { settings: false, templates: 0, history: 0, skipped: 0 };
+  const res: { settings: boolean; templates: number; history: number; skipped: number; workspace?: number } = { settings: false, templates: 0, history: 0, skipped: 0 };
   if (b.settings && typeof b.settings === 'object' && !Array.isArray(b.settings)) {
     const cur = loadSettings();
     const inc = b.settings as Record<string, unknown>;
     const merged = sanitizeSettings({ ...cur, ...inc });
     const profs = new Map(cur.profiles.map((p) => [p.id, p]));
     merged.profiles.forEach((p) => profs.set(p.id, { ...p, apiKey: p.apiKey || profs.get(p.id)?.apiKey || '' }));
-    saveSettings({ ...merged, apiKeys: { ...cur.apiKeys, ...strMap(inc.apiKeys) }, profiles: [...profs.values()] });
+    saveSettings({ ...merged, sync: { ...merged.sync, pass: merged.sync.pass || cur.sync.pass, token: merged.sync.token || cur.sync.token }, apiKeys: { ...cur.apiKeys, ...strMap(inc.apiKeys) }, profiles: [...profs.values()] });
     res.settings = true;
   }
   if (b.templates !== undefined) {
@@ -258,6 +308,12 @@ export function importData(raw: unknown): { settings: boolean; templates: number
     const ok = sanitizeList(b.history, sanitizeHistoryItem); res.skipped += b.history.length - ok.length;
     const m = new Map(loadHistory().map((h) => [h.id, h])); ok.forEach((h) => m.set(h.id, h));
     saveHistory([...m.values()].sort((a, c) => c.at - a.at)); res.history = ok.length;
+  }
+  if (b.workspace !== undefined) {
+    if (!Array.isArray(b.workspace)) throw new ImportError('workspace');
+    const ok = sanitizeList(b.workspace, sanitizePrompt); res.skipped += b.workspace.length - ok.length;
+    const m = new Map(loadWorkspace().map((p) => [p.id, p])); ok.forEach((p) => { const cur = m.get(p.id); if (!cur || p.updated >= cur.updated) m.set(p.id, p); });
+    saveWorkspace([...m.values()].sort((a, c) => c.updated - a.updated)); res.workspace = ok.length;
   }
   return res;
 }

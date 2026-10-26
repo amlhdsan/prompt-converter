@@ -2,10 +2,13 @@
 import { chat, LLMError, type ChatMessage } from '../llm';
 import { buildMessages, buildRefine, MODES, MODE_HINTS, type Mode } from '../prompts';
 import { providerById, needsKey } from '../providers';
-import { addHistory, loadTemplates } from '../storage';
+import { addHistory, loadTemplates, recordUsage } from '../storage';
+import { estimateCost, estimateTokens } from '../lib/tokens';
+import { demoOutput, fakeStream } from '../lib/demo';
+import type { UsageKind } from '../lib/stats';
 import { isDesktop, isQuick, pasteBack, showMain } from '../platform';
 import { $, copyText, fmt, toast, uid } from './dom';
-import { out, persist, reloadSettings, rerender, st, t } from './state';
+import { lang2, out, persist, reloadSettings, rerender, st, t } from './state';
 
 export const modeIcon: Record<Mode, string> = { general: '🧭', coding: '💻', writing: '✍️', analysis: '🔬', image: '🎨' };
 export interface ModeOpt { id: string; label: string; icon: string; hint: string; custom: boolean }
@@ -48,15 +51,31 @@ export function ensureKey(openSettings: () => void): boolean {
 }
 export const strip = (x: string) => x.replace(/^```[a-z]*\n([\s\S]*?)\n```\s*$/i, '$1').trim();
 
-async function run(build: (i: number) => ChatMessage[], n: number, saveInput: string) {
-  st.busy = true; st.error = ''; st.outputs = Array(n).fill(''); st.active = 0; st.ctrl = new AbortController(); rerender();
+/** Demo mode is active when the user chose it and has no usable key. */
+export const inDemo = () => st.s.demo && needsKey(providerById(st.s.provider)) && !st.s.apiKeys[st.s.provider];
+
+/** Records a usage event for the statistics dashboard (local only). */
+export function track(kind: UsageKind, messages: ChatMessage[], output: string, t0: number, ok: boolean, model = st.s.model) {
+  if (!st.s.stats || inDemo()) return;
+  const inTok = estimateTokens(messages.map((m) => m.content).join('\n'));
+  const outTok = estimateTokens(output);
+  const local = !!providerById(st.s.provider).noKey;
+  try { recordUsage({ at: Date.now(), kind, model, inTok, outTok, cost: estimateCost(model, inTok, outTok, local), ms: Math.round(performance.now() - t0), ok }); } catch { /* stats are best-effort */ }
+}
+
+async function run(build: (i: number) => ChatMessage[], n: number, saveInput: string, kind: UsageKind = 'convert') {
+  st.busy = true; st.error = ''; st.outputs = Array(n).fill(''); st.active = 0; st.ctrl = new AbortController(); st.startedAt = performance.now(); rerender();
   const base = reqBase();
   const signal = st.ctrl.signal;
-  const results = await Promise.allSettled(Array.from({ length: n }, (_, i) => chat({
+  const t0 = performance.now();
+  const demo = inDemo();
+  const results = await Promise.allSettled(Array.from({ length: n }, (_, i) => demo
+    ? fakeStream(demoOutput(st.s.mode, lang2()), (txt) => { st.outputs[i] = txt; if (i === st.active) updateOutputLive(); else updateVariantTabs(); }, signal).catch((e) => { throw (e as Error).name === 'AbortError' ? new LLMError('aborted', 'aborted') : e; })
+    : chat({
     ...base, signal, messages: build(i), temperature: n > 1 ? 0.4 + i * 0.3 : 0.4,
     onRetry: (a, m) => { st.notice = fmt(t().retrying, { n: a, m }); noticeHook(); },
     onDelta: (txt) => { st.outputs[i] = txt; if (i === st.active) updateOutputLive(); else updateVariantTabs(); },
-  })));
+  }).then((r) => { track(kind, build(i), r, t0, true); return r; }, (e) => { if (!(e instanceof LLMError && e.kind === 'aborted')) track(kind, build(i), '', t0, false); throw e; })));
   let ok = 0;
   st.notice = '';
   results.forEach((r, i) => {
@@ -82,12 +101,13 @@ export async function convert(openSettings: () => void) {
   if (st.busy) { st.ctrl?.abort(); return; }
   reloadSettings(); // pick up changes made in another window (desktop)
   if (!st.input.trim()) { toast(t().inputEmpty); $('#input')?.focus(); return; }
-  if (!ensureKey(openSettings)) return;
+  if (!inDemo() && !ensureKey(openSettings)) return;
   const mode = currentMode();
   const n = isQuick ? 1 : st.s.variants;
   st.task = 'convert';
   const ok = await run(() => buildMessages(st.input, mode.hint, st.s.outLang, st.s.customLang), n, st.input);
   rerender();
+  if (ok && !isQuick && (st.s.autoCopy || st.copyNext)) { st.copyNext = false; await copyText(out()); }
   if (ok && isQuick && st.s.quickAutoCopy) {
     await copyText(out(), true);
     if (isDesktop && st.s.autoPaste) { pasteBack().catch((e) => { st.error = String(e); rerender(); }); return; }
@@ -98,10 +118,10 @@ export async function convert(openSettings: () => void) {
 export async function refine(instruction: string, openSettings: () => void) {
   if (st.busy || !out() || !instruction.trim()) return;
   reloadSettings();
-  if (!ensureKey(openSettings)) return;
+  if (!inDemo() && !ensureKey(openSettings)) return;
   const prev = out(); const mode = currentMode();
   st.task = 'refine';
-  await run(() => buildRefine(st.input, prev, instruction.trim(), mode.hint, st.s.outLang, st.s.customLang), 1, st.input);
+  await run(() => buildRefine(st.input, prev, instruction.trim(), mode.hint, st.s.outLang, st.s.customLang), 1, st.input, 'refine');
   rerender();
 }
 

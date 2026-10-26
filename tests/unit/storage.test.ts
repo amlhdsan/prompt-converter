@@ -21,10 +21,10 @@ describe('migrations', () => {
     expect(st).toMatchObject({ provider: 'openai', model: 'gpt-x', uiLang: 'zh', variants: 3, timeoutSec: 60, retries: 2, apiKeys: { openai: 'sk' } });
     expect(s.loadHistory().map((h) => h.id)).toEqual(['h0', 'h1']);
     expect(s.loadTemplates()).toEqual([expect.objectContaining({ id: 't', icon: '⭐' })]);
-    expect(localStorage.getItem('pc.schema')).toBe('2');
+    expect(localStorage.getItem('pc.schema')).toBe('3');
   });
   it('does not re-run migrations once stamped', async () => {
-    localStorage.setItem('pc.schema', '2');
+    localStorage.setItem('pc.schema', '3');
     localStorage.setItem('pc.history.v1', JSON.stringify([{ id: 'x', at: 1, input: 'a', output: 'b', extra: 1 }]));
     await load();
     expect(JSON.parse(localStorage.getItem('pc.history.v1')!)[0].extra).toBe(1);
@@ -33,7 +33,7 @@ describe('migrations', () => {
 
 describe('corruption recovery', () => {
   it('backs up corrupted JSON, resets to defaults and reports it', async () => {
-    localStorage.setItem('pc.schema', '2');
+    localStorage.setItem('pc.schema', '3');
     localStorage.setItem('pc.settings.v1', '{not json');
     const s = await load();
     expect(s.loadSettings().provider).toBe(s.DEFAULT_SETTINGS.provider);
@@ -42,7 +42,7 @@ describe('corruption recovery', () => {
     expect(JSON.parse(localStorage.getItem('pc.errors.v1')!)[0].ctx).toBe('storage:pc.settings.v1');
   });
   it('treats non-array history as empty', async () => {
-    localStorage.setItem('pc.schema', '2');
+    localStorage.setItem('pc.schema', '3');
     localStorage.setItem('pc.history.v1', '{"a":1}');
     expect((await load()).loadHistory()).toEqual([]);
   });
@@ -112,7 +112,7 @@ describe('import / export', () => {
     localStorage.clear();
     const s2 = await load();
     const r = s2.importData(JSON.parse(JSON.stringify(noKeys)));
-    expect(r).toEqual({ settings: true, templates: 0, history: 2, skipped: 0 });
+    expect(r).toEqual({ settings: true, templates: 0, history: 2, skipped: 0, workspace: 0 });
     expect(s2.loadHistory().length).toBe(2);
   });
   it('rejects invalid, newer and malformed backups', async () => {
