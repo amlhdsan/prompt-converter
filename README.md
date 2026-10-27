@@ -1,22 +1,50 @@
 <div align="center">
 
-# ✨ 提示词转换器 · Prompt Converter
+# ✨ Prompt Converter · 提示词转换器
 
-[![CI](https://github.com/amlhdsan/prompt-converter/actions/workflows/ci.yml/badge.svg)](https://github.com/amlhdsan/prompt-converter/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/amlhdsan/prompt-converter)](https://github.com/amlhdsan/prompt-converter/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+**Turn a rough one-liner into a structured, effective prompt — with your own API key, nothing sent anywhere else.**<br/>
+**把随手写的一句话，变成结构清晰、效果更好的提示词。自带 Key，数据不经任何第三方。**
 
-**把随手写的想法，一键变成结构清晰、效果更好的提示词。**
-
-纯前端 · 本地运行 · 自带 API Key · 12 个服务商 + 任意 OpenAI 兼容接口 · 可安装 PWA · 🖥️ Windows / macOS / Linux 桌面版
-
-[English](#english) · [快速开始](#-快速开始本地部署) · [桌面版](#️-桌面版--desktop-app) · [快捷键](#️-快捷键--shortcuts) · [更新](#-更新--updating) · [隐私说明](#-隐私说明) · [路线图](#️-路线图)
+[![CI](https://github.com/amlhdsan/prompt-converter/actions/workflows/ci.yml/badge.svg)](https://github.com/amlhdsan/prompt-converter/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/amlhdsan/prompt-converter)](https://github.com/amlhdsan/prompt-converter/releases/latest) [![Downloads](https://img.shields.io/github/downloads/amlhdsan/prompt-converter/total)](https://github.com/amlhdsan/prompt-converter/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ![demo](docs/demo.gif)
 
-<sub>演示使用模拟接口录制 · Demo recorded against a mock API</sub>
+<sub>Recorded against a mock API · 演示使用模拟接口录制</sub>
+
+[English](#english) · [快速开始](#-30-秒上手--quick-start) · [亮点](#-亮点--highlights) · [桌面版](#️-桌面版--desktop-app) · [浏览器扩展](#-浏览器扩展--browser-extension) · [隐私](#-隐私说明) · [更新日志](CHANGELOG.md)
 
 </div>
 
-## 🚀 快速开始（本地部署）
+## ⚡ 30 秒上手 / Quick start
+
+| 方式 Option | 步骤 Steps |
+| --- | --- |
+| 🖥️ **桌面版 Desktop** (Windows / macOS / Linux) | 从 [Releases](https://github.com/amlhdsan/prompt-converter/releases/latest) 下载安装包 → 打开 → 按 `Ctrl/⌘+Shift+Space` 呼出悬浮窗 / Download an installer, open it, press `Ctrl/⌘+Shift+Space` for the quick window |
+| 🌐 **网页版 Web** | `git clone https://github.com/amlhdsan/prompt-converter && cd prompt-converter && npm install && npm run dev` → http://localhost:5173 （可安装为 PWA / installable as a PWA） |
+| 🐳 **Docker** | `docker compose up -d` → http://localhost:3000 |
+| 🧩 **Chrome 扩展 Extension** | 下载 Releases 里的 `prompt-converter-extension-*.zip` → `chrome://extensions` → 加载已解压的扩展 / Load unpacked |
+
+**没有 API Key？** 首次打开选「先看看演示」即可体验全部界面（演示模式，不会发任何请求）。有 Key 的话，跟着引导：选服务商 → 填 Key → 测试连接 → 跑一次示例。
+**No key yet?** Pick “Try the demo first” on the welcome screen — sample results, zero requests. Otherwise the guide takes about a minute: provider → key → connection test → sample.
+
+## 🌟 亮点 / Highlights
+
+- 🧠 **结构化改写 Structured rewrite** — role, goal, context, constraints, steps, output format; unknown facts become `[请补充: …]` placeholders instead of being invented
+- 🔌 **12 个服务商 + 任意 OpenAI 兼容接口 / 12 providers + any OpenAI-compatible endpoint** (incl. Ollama, OneAPI relays); streaming, retries, clear errors
+- 📚 **提示词库 Prompt library** — tags, folders, stars, search, per-prompt version history with diff & restore
+- 🆚 **多模型对比 Compare** models side by side · 💬 **对话 Chat** with the result as the system prompt
+- 🧰 **技巧工具箱 Toolbox** — chain of thought, few-shot, role, JSON schema, explain, structure-preserving translation, Midjourney / SD / DALL·E params
+- 🧩 **模板市场 Template gallery** — bundled packs, import by URL/JSON · 📦 batch convert · 🕘 history
+- ✍️ **顺手 Little things** — autosaved drafts, undo/redo, drag-in text files, token counter, mode auto-suggest, convert & copy in one key, undo toasts
+- 🖥️ **桌面版 Desktop** — global hotkey quick window, convert-selection hotkey, tray, mini always-on-top mode
+- ☁️ **同步 Sync** to your own WebDAV or private Gist · 📊 local usage stats · 🌗 dark mode · 中文 / English / 日本語
+- 🔒 **隐私 Privacy** — pure frontend, key stays on your device, requests go straight to your provider
+
+---
+
+<h2 align="center">📖 完整文档 / Full documentation</h2>
+
+## 🚀 本地部署详情
 
 > 需要 Node.js 18+。
 
